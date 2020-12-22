@@ -1,0 +1,38 @@
+
+[tool.poetry]
+name = "spectrophotometricpca"
+version = "0.1.0"
+description = ""
+authors = ["Boris Leistedt <b.leistedt@imperial.ac.uk>"]
+license = "MIT"
+readme = "README.md"
+homepage = "https://github.com/ixkael/spectrophotometricpca"
+repository = "https://github.com/ixkael/spectrophotometricpca"
+keywords = ["hypermodern"]
+
+[tool.poetry.dependencies]
+gasp = { git = "https://github.com/ixkael/gasp.git", branch="main" }
+python = "^3.8"
+jaxlib = "^0.1.57"
+click = "^7.1.2"
+chex = "^0.0.3"
+jax = "^0.2.7"
+
+[tool.poetry.dev-dependencies]
+pytest = "^6.2.1"
+coverage = {extras = ["toml"], version = "^5.3.1"}
+pytest-cov = "^2.10.1"
+
+[build-system]
+requires = ["poetry>=0.12"]
+build-backend = "poetry.masonry.api"
+
+[tool.coverage.paths]
+source = ["spectrophotometricpca", "*/site-packages"]
+
+[tool.coverage.run]
+branch = true
+source = ["spectrophotometricpca"]
+
+[tool.coverage.report]
+show_missing = true
