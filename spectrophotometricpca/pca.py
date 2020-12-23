@@ -176,6 +176,7 @@ def batch_indices(start_indices, n_components, npix):
     return indices_0, indices_1
 
 
+@partial(jit, static_argnums=(1, 2))
 def bayesianpca_spec_and_specandphot(params_list, data_batch, aux_data):
 
     (
@@ -294,7 +295,7 @@ def bayesianpca_spec_and_specandphot(params_list, data_batch, aux_data):
     )
 
 
-@jit
+@partial(jit, static_argnums=(1, 2))
 def loss_spec_and_specandphot(params_list, data_batch, aux_data):
     (
         logfml_speconly,

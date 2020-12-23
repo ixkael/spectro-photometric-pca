@@ -71,3 +71,6 @@ def test_bayesianpca_spec_and_specandphot():
     assert_shape(theta_map_specandphot, (batch_size, numComponents + numPoly))
     assert_shape(theta_std_specandphot, (batch_size, numComponents + numPoly))
     assert_shape(specmod_map_specandphot, (batch_size, numSpecPix))
+
+    loss = loss_spec_and_specandphot(params_list, data_batch, aux_data)
+    assert np.all(np.isfinite(loss))
