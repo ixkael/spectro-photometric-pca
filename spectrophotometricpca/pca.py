@@ -310,14 +310,6 @@ def loss_spec_and_specandphot(params_list, data_batch, aux_data):
     return -np.sum(logfml_specandphot + logfml_speconly)
 
 
-@jit
-def update(step, opt_state, data):
-    params = get_params(opt_state)
-    value, grads = jax.value_and_grad(loss_spec_and_specandphot)(params, data)
-    opt_state = opt_update(step, grads, opt_state)
-    return value, opt_state
-
-
 def init_params(key, numObj, numComponents, numPoly, lamgridsize):
 
     pcacomponents_prior = PriorModel(numComponents)

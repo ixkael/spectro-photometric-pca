@@ -12,15 +12,15 @@ key = jax.random.PRNGKey(42)
 def test_bayesianpca_spec_and_specandphot():
 
     numObj, numSedPix, numSpecPix, numPhotBands, numTransferZ = 122, 100, 47, 5, 50
-    datapipeline = DataPipeline.save_fake_data(
+    dataPipeline = DataPipeline.save_fake_data(
         numObj, numSedPix, numSpecPix, numPhotBands, numTransferZ
     )
-    datapipeline = DataPipeline("data/fake/fake_")
+    dataPipeline = DataPipeline("data/fake/fake_")
 
     batch_size = 20
-    data_batch = datapipeline.next_batch(datapipeline.ind_train_local, batch_size)
+    data_batch = dataPipeline.next_batch(dataPipeline.ind_train_local, batch_size)
 
-    print(datapipeline.ind_train_local)
+    print(dataPipeline.ind_train_local)
     (
         si,
         batch_index_wave,
