@@ -62,17 +62,21 @@ def test_bayesianpca_spec_and_specandphot():
         theta_map_speconly,
         theta_std_speconly,
         specmod_map_speconly,
+        photmod_map_speconly,
         logfml_specandphot,
         theta_map_specandphot,
         theta_std_specandphot,
         specmod_map_specandphot,
+        photmod_map_specandphot,
     ) = result
     assert_shape(theta_map_speconly, (batch_size, numComponents + numPoly))
     assert_shape(theta_std_speconly, (batch_size, numComponents + numPoly))
     assert_shape(specmod_map_speconly, (batch_size, numSpecPix))
+    assert_shape(photmod_map_speconly, (batch_size, numPhotBands))
     assert_shape(theta_map_specandphot, (batch_size, numComponents + numPoly))
     assert_shape(theta_std_specandphot, (batch_size, numComponents + numPoly))
     assert_shape(specmod_map_specandphot, (batch_size, numSpecPix))
+    assert_shape(photmod_map_specandphot, (batch_size, numPhotBands))
 
 
 def test_loss_spec_and_specandphot():
@@ -109,7 +113,7 @@ def test_loss_spec_and_specandphot():
         return value, opt_state
 
     nbatches = dataPipeline.get_nbatches(dataPipeline.ind_train_local, batch_size)
-    n_epoch = 4
+    n_epoch = 2
     itercount = itertools.count()
     for i in range(n_epoch):
         neworder = jax.random.permutation(key, dataPipeline.ind_train_local.size)

@@ -192,6 +192,7 @@ def bayesianpca_spec_and_specandphot(params_list, data_batch, aux_data):
 
     (
         si,
+        bs,
         batch_index_wave,
         batch_index_transfer_redshift,
         spec,
@@ -203,7 +204,6 @@ def bayesianpca_spec_and_specandphot(params_list, data_batch, aux_data):
         phot_invvar,
         phot_loginvvar,
         batch_redshifts,
-        bs,
         batch_transferfunctions,
         batch_index_wave_ext,
     ) = data_batch
@@ -217,11 +217,12 @@ def bayesianpca_spec_and_specandphot(params_list, data_batch, aux_data):
     indices_0, indices_1 = batch_indices(batch_index_wave, numComponents, numSpecPixels)
     (polynomials_spec, numSpecPix, components_prior) = aux_data
 
-    print("batch_index_wave", bs, batch_index_wave.shape, numSpecPix)
     pcacomponents_speconly_atz = pcacomponents_speconly[indices_0, indices_1]
-    # take_batch(
-    #    pcacomponents_speconly, batch_index_wave, numSpecPix
-    # )
+    components_phot_speconly = np.sum(
+        pcacomponents_speconly[None, :, :, None]
+        * batch_transferfunctions[:, None, :, :],
+        axis=2,
+    )
     components_prior_mean_speconly = PriorModel.get_mean_at_z(
         components_prior_params_speconly, batch_redshifts
     )
@@ -245,11 +246,13 @@ def bayesianpca_spec_and_specandphot(params_list, data_batch, aux_data):
         polynomials_prior_mean_speconly[None, :] * ones,  # [numObj, numPoly]
         polynomials_prior_loginvvar_speconly[None, :] * ones,  # [numObj, numPoly]
     )
+    photmod_map_speconly = np.sum(
+        components_phot_speconly[:, :, :]
+        * theta_map_speconly[:, 0:numComponents, None],
+        axis=1,
+    )
 
     pcacomponents_specandphot_atz = pcacomponents_specandphot[indices_0, indices_1]
-    # take_batch(
-    #    pcacomponents_specandphot, batch_index_wave, numSpecPix
-    # )
     components_phot_specandphot = np.sum(
         pcacomponents_specandphot[None, :, :, None]
         * batch_transferfunctions[:, None, :, :],
@@ -288,10 +291,12 @@ def bayesianpca_spec_and_specandphot(params_list, data_batch, aux_data):
         theta_map_speconly,
         theta_std_speconly,
         specmod_map_speconly,
+        photmod_map_speconly,
         logfml_specandphot,
         theta_map_specandphot,
         theta_std_specandphot,
         specmod_map_specandphot,
+        photmod_map_specandphot,
     )
 
 
@@ -302,7 +307,9 @@ def loss_spec_and_specandphot(params_list, data_batch, aux_data):
         _,
         _,
         _,
+        _,
         logfml_specandphot,
+        _,
         _,
         _,
         _,

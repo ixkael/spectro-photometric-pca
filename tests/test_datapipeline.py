@@ -23,6 +23,7 @@ def test_bayesianpca_spec_and_specandphot():
     print(dataPipeline.ind_train_local)
     (
         si,
+        bs,
         batch_index_wave,
         batch_index_transfer_redshift,
         spec,
@@ -34,7 +35,6 @@ def test_bayesianpca_spec_and_specandphot():
         phot_invvar,
         phot_loginvvar,
         batch_redshifts,
-        bs,
         batch_transferfunctions,
         batch_index_wave_ext,
     ) = data_batch

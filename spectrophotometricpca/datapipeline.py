@@ -443,6 +443,7 @@ class DataPipeline:
 
         return (
             startindex,
+            actualbatchsize,
             batch_index_wave,
             batch_index_transfer_redshift,
             batch_spec,
@@ -454,7 +455,6 @@ class DataPipeline:
             batch_phot_invvar,
             batch_phot_loginvvar,
             batch_redshifts,
-            actualbatchsize,
             batch_transferfunctions,
             batch_index_wave_ext,
         )
