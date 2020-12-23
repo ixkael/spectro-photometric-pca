@@ -1,4 +1,7 @@
 
+# poetry export -f requirements.txt --output requirements.txt
+# poetry run pytest --cov -p no:warnings
+
 [tool.poetry]
 name = "spectrophotometricpca"
 version = "0.1.0"
@@ -6,8 +9,8 @@ description = ""
 authors = ["Boris Leistedt <b.leistedt@imperial.ac.uk>"]
 license = "MIT"
 readme = "README.md"
-homepage = "https://github.com/ixkael/spectrophotometricpca"
-repository = "https://github.com/ixkael/spectrophotometricpca"
+homepage = "https://github.com/ixkael/spectro-photometric-pca"
+repository = "https://github.com/ixkael/spectro-photometric-pca"
 keywords = ["hypermodern"]
 
 [tool.poetry.dependencies]
