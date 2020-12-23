@@ -193,7 +193,7 @@ class DataPipeline:
         self,
         root,
         N=1,
-        npix_min=100,
+        npix_min=1,
         lambda_start=8e2,
         write_subset=False,
         use_subset=False,

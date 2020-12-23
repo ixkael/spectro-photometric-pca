@@ -14,6 +14,7 @@ repository = "https://github.com/ixkael/spectro-photometric-pca"
 keywords = ["hypermodern"]
 
 [tool.poetry.dependencies]
+#gasp = { git = "https://github.com/ixkael/gasp.git", branch="main" }
 gasp = { git = "https://github.com/ixkael/gasp.git", branch="main" }
 python = "^3.8"
 jaxlib = "^0.1.57"

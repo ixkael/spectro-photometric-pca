@@ -15,7 +15,7 @@ def test_bayesianpca_spec_and_specandphot():
     datapipeline = DataPipeline.save_fake_data(
         numObj, numSedPix, numSpecPix, numPhotBands, numTransferZ
     )
-    datapipeline = DataPipeline("data/fake/fake_", npix_min=1)
+    datapipeline = DataPipeline("data/fake/fake_")
 
     batch_size = 20
     data_batch = datapipeline.next_batch(datapipeline.ind_train_local, batch_size)
@@ -49,3 +49,10 @@ def test_bayesianpca_spec_and_specandphot():
     assert_shape(phot_loginvvar, (bs, numPhotBands))
     assert_shape(batch_redshifts, (bs,))
     assert_shape(batch_transferfunctions, (bs, numSedPix, numPhotBands))
+
+    numComponents = 3
+    pcacomponents_speconly = jax.random.normal(key, (numComponents, numSedPix))
+    pcacomponents_speconly_atz = take_batch(
+        pcacomponents_speconly, batch_index_wave, numSpecPix
+    )
+    assert_shape(pcacomponents_speconly_atz, (bs, numComponents, numSpecPix))
