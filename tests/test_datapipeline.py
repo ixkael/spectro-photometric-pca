@@ -11,14 +11,14 @@ key = jax.random.PRNGKey(42)
 
 def test_bayesianpca_spec_and_specandphot():
 
-    numObj, numSedPix, numSpecPix, numPhotBands, numTransferZ = 122, 100, 47, 5, 50
+    n_obj, n_pix_sed, n_pix_spec, n_pix_phot, n_pix_transfer = 122, 100, 47, 5, 50
     dataPipeline = DataPipeline.save_fake_data(
-        numObj, numSedPix, numSpecPix, numPhotBands, numTransferZ
+        n_obj, n_pix_sed, n_pix_spec, n_pix_phot, n_pix_transfer
     )
     dataPipeline = DataPipeline("data/fake/fake_")
 
-    batch_size = 20
-    data_batch = dataPipeline.next_batch(dataPipeline.ind_train_local, batch_size)
+    batchsize = 20
+    data_batch = dataPipeline.next_batch(dataPipeline.ind_train_local, batchsize)
 
     print(dataPipeline.ind_train_local)
     (
@@ -39,20 +39,20 @@ def test_bayesianpca_spec_and_specandphot():
         batch_index_wave_ext,
     ) = data_batch
 
-    assert bs == batch_size
+    assert bs == batchsize
     assert si == 0
-    assert_shape(spec, (bs, numSpecPix))
-    assert_shape(spec_invvar, (bs, numSpecPix))
-    assert_shape(spec_loginvvar, (bs, numSpecPix))
-    assert_shape(phot, (bs, numPhotBands))
-    assert_shape(phot_invvar, (bs, numPhotBands))
-    assert_shape(phot_loginvvar, (bs, numPhotBands))
+    assert_shape(spec, (bs, n_pix_spec))
+    assert_shape(spec_invvar, (bs, n_pix_spec))
+    assert_shape(spec_loginvvar, (bs, n_pix_spec))
+    assert_shape(phot, (bs, n_pix_phot))
+    assert_shape(phot_invvar, (bs, n_pix_phot))
+    assert_shape(phot_loginvvar, (bs, n_pix_phot))
     assert_shape(batch_redshifts, (bs,))
-    assert_shape(batch_transferfunctions, (bs, numSedPix, numPhotBands))
+    assert_shape(batch_transferfunctions, (bs, n_pix_sed, n_pix_phot))
 
-    numComponents = 3
-    pcacomponents_speconly = jax.random.normal(key, (numComponents, numSedPix))
+    n_components = 3
+    pcacomponents_speconly = jax.random.normal(key, (n_components, n_pix_sed))
     pcacomponents_speconly_atz = take_batch(
-        pcacomponents_speconly, batch_index_wave, numSpecPix
+        pcacomponents_speconly, batch_index_wave, n_pix_spec
     )
-    assert_shape(pcacomponents_speconly_atz, (bs, numComponents, numSpecPix))
+    assert_shape(pcacomponents_speconly_atz, (bs, n_components, n_pix_spec))

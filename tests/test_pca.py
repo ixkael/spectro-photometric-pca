@@ -12,45 +12,45 @@ key = jax.random.PRNGKey(42)
 
 
 def test_chebychevPolynomials():
-    numPoly, numSpecPix = 3, 100
-    res = chebychevPolynomials(numPoly, numSpecPix)
-    assert_shape(res, (numPoly, numSpecPix))
+    n_poly, n_pix_spec = 3, 100
+    res = chebychevPolynomials(n_poly, n_pix_spec)
+    assert_shape(res, (n_poly, n_pix_spec))
 
 
 def test_prior():
 
-    num_components = 3
-    numObj = 10
-    prior = PriorModel(num_components)
+    n_components = 3
+    n_obj = 10
+    prior = PriorModel(n_components)
 
     params = prior.random(key)
     assert_shape(params, prior.params_shape)
 
-    redshifts = 10 ** jax.random.normal(key, (numObj,))
+    redshifts = 10 ** jax.random.normal(key, (n_obj,))
     mu = prior.get_mean_at_z(params, redshifts)
-    assert_shape(mu, (numObj, num_components))
+    assert_shape(mu, (n_obj, n_components))
     muloginvvar = prior.get_loginvvar_at_z(params, redshifts)
-    assert_shape(muloginvvar, (numObj, num_components))
+    assert_shape(muloginvvar, (n_obj, n_components))
 
 
 def test_bayesianpca_spec_and_specandphot():
 
-    numObj, numSedPix, numSpecPix, numPhotBands, numTransferZ = 122, 100, 47, 5, 50
+    n_obj, n_pix_sed, n_pix_spec, n_pix_phot, n_pix_transfer = 122, 100, 47, 5, 50
     dataPipeline = DataPipeline.save_fake_data(
-        numObj, numSedPix, numSpecPix, numPhotBands, numTransferZ
+        n_obj, n_pix_sed, n_pix_spec, n_pix_phot, n_pix_transfer
     )
     dataPipeline = DataPipeline("data/fake/fake_")
 
-    numComponents, numPoly = 4, 3
+    n_components, n_poly = 4, 3
     params_list, pcacomponents_prior = init_params(
-        key, numObj, numComponents, numPoly, numSedPix
+        key, n_obj, n_components, n_poly, n_pix_sed
     )
 
-    batch_size = 20
+    batchsize = 20
     indices = dataPipeline.ind_train_local
-    data_batch = dataPipeline.next_batch(indices, batch_size)
-    polynomials_spec = chebychevPolynomials(numPoly, numSpecPix)
-    aux_data = (polynomials_spec, numSpecPix, 0)
+    data_batch = dataPipeline.next_batch(indices, batchsize)
+    polynomials_spec = chebychevPolynomials(n_poly, n_pix_spec)
+    aux_data = (polynomials_spec, n_pix_spec, 0)
 
     result = bayesianpca_spec_and_specandphot(params_list, data_batch, aux_data)
 
@@ -69,34 +69,34 @@ def test_bayesianpca_spec_and_specandphot():
         specmod_map_specandphot,
         photmod_map_specandphot,
     ) = result
-    assert_shape(theta_map_speconly, (batch_size, numComponents + numPoly))
-    assert_shape(theta_std_speconly, (batch_size, numComponents + numPoly))
-    assert_shape(specmod_map_speconly, (batch_size, numSpecPix))
-    assert_shape(photmod_map_speconly, (batch_size, numPhotBands))
-    assert_shape(theta_map_specandphot, (batch_size, numComponents + numPoly))
-    assert_shape(theta_std_specandphot, (batch_size, numComponents + numPoly))
-    assert_shape(specmod_map_specandphot, (batch_size, numSpecPix))
-    assert_shape(photmod_map_specandphot, (batch_size, numPhotBands))
+    assert_shape(theta_map_speconly, (batchsize, n_components + n_poly))
+    assert_shape(theta_std_speconly, (batchsize, n_components + n_poly))
+    assert_shape(specmod_map_speconly, (batchsize, n_pix_spec))
+    assert_shape(photmod_map_speconly, (batchsize, n_pix_phot))
+    assert_shape(theta_map_specandphot, (batchsize, n_components + n_poly))
+    assert_shape(theta_std_specandphot, (batchsize, n_components + n_poly))
+    assert_shape(specmod_map_specandphot, (batchsize, n_pix_spec))
+    assert_shape(photmod_map_specandphot, (batchsize, n_pix_phot))
 
 
 def test_loss_spec_and_specandphot():
 
-    numObj, numSedPix, numSpecPix, numPhotBands, numTransferZ = 122, 100, 47, 5, 50
+    n_obj, n_pix_sed, n_pix_spec, n_pix_phot, n_pix_transfer = 122, 100, 47, 5, 50
     dataPipeline = DataPipeline.save_fake_data(
-        numObj, numSedPix, numSpecPix, numPhotBands, numTransferZ
+        n_obj, n_pix_sed, n_pix_spec, n_pix_phot, n_pix_transfer
     )
     dataPipeline = DataPipeline("data/fake/fake_")
 
-    numComponents, numPoly = 4, 3
+    n_components, n_poly = 4, 3
     params_list, pcacomponents_prior = init_params(
-        key, numObj, numComponents, numPoly, numSedPix
+        key, n_obj, n_components, n_poly, n_pix_sed
     )
 
-    batch_size = 20
-    polynomials_spec = chebychevPolynomials(numPoly, numSpecPix)
-    aux_data = (polynomials_spec, numSpecPix, 0)
+    batchsize = 20
+    polynomials_spec = chebychevPolynomials(n_poly, n_pix_spec)
+    aux_data = (polynomials_spec, n_pix_spec, 0)
 
-    data_batch = dataPipeline.next_batch(dataPipeline.ind_train_local, batch_size)
+    data_batch = dataPipeline.next_batch(dataPipeline.ind_train_local, batchsize)
     loss = loss_spec_and_specandphot(params_list, data_batch, aux_data)
     assert np.all(np.isfinite(loss))
 
@@ -112,7 +112,7 @@ def test_loss_spec_and_specandphot():
         opt_state = opt_update(step, grads, opt_state)
         return value, opt_state
 
-    nbatches = dataPipeline.get_nbatches(dataPipeline.ind_train_local, batch_size)
+    nbatches = dataPipeline.get_nbatches(dataPipeline.ind_train_local, batchsize)
     n_epoch = 2
     itercount = itertools.count()
     for i in range(n_epoch):
@@ -120,6 +120,6 @@ def test_loss_spec_and_specandphot():
         train_indices_reordered = np.take(dataPipeline.ind_train_local, neworder)
         dataPipeline.batch = 0  # reset batch number
         for j in range(nbatches):
-            data_batch = dataPipeline.next_batch(train_indices_reordered, batch_size)
+            data_batch = dataPipeline.next_batch(train_indices_reordered, batchsize)
             loss, opt_state = update(next(itercount), opt_state, data_batch, aux_data)
             assert np.all(np.isfinite(loss))

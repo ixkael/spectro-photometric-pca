@@ -114,21 +114,21 @@ class DataPipeline:
         self.phot_invvar = flux_ivars = np.load(self.root + "phot_invvar" + suffix)
         self.redshifts = np.load(self.root + "redshifts" + suffix)
 
-        numObj = self.chi2s_sdss.shape[0]
-        assert_shape(self.chi2s_sdss, (numObj,))
-        assert_shape(self.index_wave, (numObj,))
-        assert_shape(self.index_transfer_redshift, (numObj,))
-        numSpecPix = self.spec.shape[1]
-        assert_shape(self.spec, (numObj, numSpecPix))
-        assert_shape(self.specmod_sdss, (numObj, numSpecPix))
-        assert_shape(self.spec_invvar, (numObj, numSpecPix))
-        numPhotBands = self.phot.shape[1]
-        assert_shape(self.phot, (numObj, numPhotBands))
-        assert_shape(self.phot_invvar, (numObj, numPhotBands))
-        assert_shape(self.redshifts, (numObj,))
+        n_obj = self.chi2s_sdss.shape[0]
+        assert_shape(self.chi2s_sdss, (n_obj,))
+        assert_shape(self.index_wave, (n_obj,))
+        assert_shape(self.index_transfer_redshift, (n_obj,))
+        n_pix_spec = self.spec.shape[1]
+        assert_shape(self.spec, (n_obj, n_pix_spec))
+        assert_shape(self.specmod_sdss, (n_obj, n_pix_spec))
+        assert_shape(self.spec_invvar, (n_obj, n_pix_spec))
+        n_pix_phot = self.phot.shape[1]
+        assert_shape(self.phot, (n_obj, n_pix_phot))
+        assert_shape(self.phot_invvar, (n_obj, n_pix_phot))
+        assert_shape(self.redshifts, (n_obj,))
 
-        self.numObj, self.numPhotBands = self.phot.shape
-        self.numSpecPixels = self.spec.shape[1]
+        self.n_obj, self.n_pix_phot = self.phot.shape
+        self.n_pix_specels = self.spec.shape[1]
 
         if write_subset:
 
@@ -155,44 +155,44 @@ class DataPipeline:
             np.save(self.root + "spec_mod" + suffix, self.specmod_sdss)
 
     @staticmethod
-    def save_fake_data(numObj, numSedPix, numSpecPix, numPhotBands, numTransferZ):
+    def save_fake_data(n_obj, n_pix_sed, n_pix_spec, n_pix_phot, n_pix_transfer):
 
         root = "data/fake/fake_"
         from jax.random import uniform, randint
 
-        np.save(root + "lamgrid.npy", 8.1e2 + np.arange(numSedPix))
-        np.save(root + "lam_phot_eff.npy", np.arange(numPhotBands))
-        np.save(root + "lam_phot_size_eff.npy", np.arange(numPhotBands))
+        np.save(root + "lamgrid.npy", 8.1e2 + np.arange(n_pix_sed))
+        np.save(root + "lam_phot_eff.npy", np.arange(n_pix_phot))
+        np.save(root + "lam_phot_size_eff.npy", np.arange(n_pix_phot))
         np.save(
             root + "transferfunctions.npy",
-            uniform(key, (numTransferZ, numSedPix, numPhotBands)),
+            uniform(key, (n_pix_transfer, n_pix_sed, n_pix_phot)),
         )
-        np.save(root + "transferfunctions_zgrid.npy", np.arange(numTransferZ))
+        np.save(root + "transferfunctions_zgrid.npy", np.arange(n_pix_transfer))
 
-        np.save(root + "chi2s_sdss.npy", uniform(key, (numObj,)))
+        np.save(root + "chi2s_sdss.npy", uniform(key, (n_obj,)))
         np.save(
             root + "lamspec_waveoffset.npy",
-            randint(key, (1,), 0, numSedPix - numSpecPix - 1),
+            randint(key, (1,), 0, n_pix_sed - n_pix_spec - 1),
         )
         np.save(
             root + "index_wave.npy",
-            randint(key, (numObj,), 0, numSedPix - numSpecPix - 1),
+            randint(key, (n_obj,), 0, n_pix_sed - n_pix_spec - 1),
         )
         np.save(
             root + "index_transfer_redshift.npy",
-            randint(key, (numObj,), 0, numTransferZ),
+            randint(key, (n_obj,), 0, n_pix_transfer),
         )
-        np.save(root + "spec.npy", uniform(key, (numObj, numSpecPix)))
-        np.save(root + "spec_mod.npy", uniform(key, (numObj, numSpecPix)))
-        np.save(root + "spec_invvar.npy", uniform(key, (numObj, numSpecPix)))
-        np.save(root + "phot.npy", uniform(key, (numObj, numPhotBands)))
-        np.save(root + "phot_invvar.npy", uniform(key, (numObj, numPhotBands)))
-        np.save(root + "redshifts.npy", uniform(key, (numObj,)))
+        np.save(root + "spec.npy", uniform(key, (n_obj, n_pix_spec)))
+        np.save(root + "spec_mod.npy", uniform(key, (n_obj, n_pix_spec)))
+        np.save(root + "spec_invvar.npy", uniform(key, (n_obj, n_pix_spec)))
+        np.save(root + "phot.npy", uniform(key, (n_obj, n_pix_phot)))
+        np.save(root + "phot_invvar.npy", uniform(key, (n_obj, n_pix_phot)))
+        np.save(root + "redshifts.npy", uniform(key, (n_obj,)))
 
     def __init__(
         self,
         root,
-        subSampling=1,
+        subsampling=1,
         npix_min=1,
         lambda_start=8e2,
         write_subset=False,
@@ -206,27 +206,27 @@ class DataPipeline:
 
         self.batch = 0
         if selected_bands is None:
-            self.selected_bands = np.arange(self.numPhotBands)
+            self.selected_bands = np.arange(self.n_pix_phot)
         else:
             self.selected_bands = selected_bands
 
-        if subSampling > 1:
+        if subsampling > 1:
 
             numIR = 0  # 200
             self.lamgrid = np.concatenate(
-                (self.lamgrid[:-numIR][::subSampling], self.lamgrid[-numIR:])
+                (self.lamgrid[:-numIR][::subsampling], self.lamgrid[-numIR:])
             )
             self.transferfunctions = np.hstack(
                 (
-                    self.transferfunctions[:, :-numIR, :][:, ::subSampling, :],
+                    self.transferfunctions[:, :-numIR, :][:, ::subsampling, :],
                     self.transferfunctions[:, -numIR:, :],
                 )
             )
-            self.transferfunctions = self.transferfunctions[::subSampling, :, :]
-            self.transferfunctions_zgrid = self.transferfunctions_zgrid[::subSampling]
-            self.lamspec_waveoffset = self.lamspec_waveoffset // subSampling
+            self.transferfunctions = self.transferfunctions[::subsampling, :, :]
+            self.transferfunctions_zgrid = self.transferfunctions_zgrid[::subsampling]
+            self.lamspec_waveoffset = self.lamspec_waveoffset // subsampling
             # self.initial_pca = np.hstack(
-            #    (self.initial_pca[:, :-numIR][:, ::subSampling], self.initial_pca[:, -numIR:])
+            #    (self.initial_pca[:, :-numIR][:, ::subsampling], self.initial_pca[:, -numIR:])
             # )
 
         xbounds = onp.zeros(self.lamgrid.size + 1)
@@ -252,12 +252,12 @@ class DataPipeline:
         # spec[spec <= 0] = np.nan
         self.spec_invvar[self.spec_invvar <= 0] = 0
 
-        if subSampling > 1:
-            self.spec = self.spec[:, ::subSampling]
-            self.specmod_sdss = self.specmod_sdss[:, ::subSampling]
-            self.spec_invvar = self.spec_invvar[:, ::subSampling]
-            self.index_wave = self.index_wave // subSampling
-            self.index_transfer_redshift = self.index_transfer_redshift // subSampling
+        if subsampling > 1:
+            self.spec = self.spec[:, ::subsampling]
+            self.specmod_sdss = self.specmod_sdss[:, ::subsampling]
+            self.spec_invvar = self.spec_invvar[:, ::subsampling]
+            self.index_wave = self.index_wave // subsampling
+            self.index_transfer_redshift = self.index_transfer_redshift // subsampling
 
         ind = ~np.isfinite(self.spec)
         ind |= ~np.isfinite(self.spec_invvar)
@@ -373,11 +373,11 @@ class DataPipeline:
         self.specphotscalings = np.ones_like(self.redshifts)
 
     def get_grids(self):
-        numSedPix = self.lamgrid.size
-        numSpecPix = self.spec.shape[1]
+        n_pix_sed = self.lamgrid.size
+        n_pix_spec = self.spec.shape[1]
         numBands = self.phot.shape[1]
         lamgrid_spec = lamgrid[
-            self.lamspec_waveoffset : self.lamspec_waveoffset + numSpecPix
+            self.lamspec_waveoffset : self.lamspec_waveoffset + n_pix_spec
         ]
         return (
             self.lamgrid,
@@ -386,16 +386,16 @@ class DataPipeline:
             self.transferfunctions,
             self.transferfunctions_zgrid,
             self.selected_bands,
-            numSedPix,
-            numSpecPix,
+            n_pix_sed,
+            n_pix_spec,
             numBands,
             lamgrid_spec,
         )
 
-    def next_batch(self, indices, batch_size, random_masking=False):
+    def next_batch(self, indices, batchsize, random_masking=False):
         length = indices.size
-        startindex = self.batch * batch_size
-        batch_indices = indices[startindex : startindex + batch_size]
+        startindex = self.batch * batchsize
+        batch_indices = indices[startindex : startindex + batchsize]
         batch_index_wave = np.take(self.index_wave, batch_indices)
         batch_index_transfer_redshift = np.take(
             self.index_transfer_redshift, batch_indices
@@ -409,7 +409,7 @@ class DataPipeline:
         batch_specphotscaling = np.take(self.specphotscalings, batch_indices)
         self.batch += 1
 
-        nextbatch_startindex = self.batch * batch_size
+        nextbatch_startindex = self.batch * batchsize
         if nextbatch_startindex >= length:
             self.batch = 0
 
@@ -424,9 +424,9 @@ class DataPipeline:
 
         # batch_spec_invvar[batch_sed_mask == 0] = 0
 
-        actualbatchsize = min([batch_size, length - startindex])
+        actualbatchsize = min([batchsize, length - startindex])
 
-        # si, _ = startindex, batch_size
+        # si, _ = startindex, batchsize
         # sh = (batch_spec.shape[0], wavesize)
         # batch_transferfunctions = np.zeros((batch_spec.shape[0], wavesize, batch_phot.shape[1]))
         batch_transferfunctions = self.transferfunctions[
@@ -469,6 +469,6 @@ class DataPipeline:
             batch_index_wave_ext,
         )
 
-    def get_nbatches(self, indices, batch_size):
-        self.batch_size = batch_size
-        return (indices.shape[0] // self.batch_size) + 1
+    def get_nbatches(self, indices, batchsize):
+        self.batchsize = batchsize
+        return (indices.shape[0] // self.batchsize) + 1

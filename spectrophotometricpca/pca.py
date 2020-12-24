@@ -10,21 +10,21 @@ from gasp.pca_utils_jx import *
 from gasp.marginallikelihoods_jx import *
 
 
-def chebychevPolynomials(numPoly, numSpecPix):
-    x = np.linspace(-1.0, 1.0, numSpecPix)
+def chebychevPolynomials(n_poly, n_pix_spec):
+    x = np.linspace(-1.0, 1.0, n_pix_spec)
     res = np.vstack(
         [x * 0 + 1, x, 2 * x ** 2 - 1, 4 * x ** 3 - 3 * x, 8 * x ** 4 - 8 * x ** 2 + 1]
-    )  # (numPoly, numSpecPix)
+    )  # (n_poly, n_pix_spec)
     print(res.shape)
-    return res[0:numPoly, :]
+    return res[0:n_poly, :]
 
 
 class PriorModel:
     """"""
 
-    def __init__(self, num_components):
-        self.num_components = num_components
-        self.params_shape = (self.num_components, 2)
+    def __init__(self, n_components):
+        self.n_components = n_components
+        self.params_shape = (self.n_components, 2)
 
     def random(self, key):
         params = jax.random.normal(key, self.params_shape)
@@ -41,25 +41,25 @@ class PriorModel:
 
 @jit
 def bayesianpca_speconly(
-    components_spec,  # [numObj, numComponents, nspec]
-    polynomials_spec,  # [numPoly, nspec]
-    spec,  # [numObj, nspec]
-    spec_invvar,  # [numObj, nspec]
-    spec_loginvvar,  # [numObj, nspec]
-    components_prior_mean,  # [numObj, numComponents]
-    components_prior_loginvvar,  # [numObj, numComponents]
-    polynomials_prior_mean,  # [numObj, numPoly]
-    polynomials_prior_loginvvar,  # [numObj, numPoly]
+    components_spec,  # [n_obj, n_components, nspec]
+    polynomials_spec,  # [n_poly, nspec]
+    spec,  # [n_obj, nspec]
+    spec_invvar,  # [n_obj, nspec]
+    spec_loginvvar,  # [n_obj, nspec]
+    components_prior_mean,  # [n_obj, n_components]
+    components_prior_loginvvar,  # [n_obj, n_components]
+    polynomials_prior_mean,  # [n_obj, n_poly]
+    polynomials_prior_loginvvar,  # [n_obj, n_poly]
 ):
 
-    numObj, nspec = np.shape(spec)[0], np.shape(spec)[1]
-    numComponents = np.shape(components_spec)[1]
-    numPoly = np.shape(polynomials_spec)[0]
+    n_obj, nspec = np.shape(spec)[0], np.shape(spec)[1]
+    n_components = np.shape(components_spec)[1]
+    n_poly = np.shape(polynomials_spec)[0]
 
     components_spec_all = np.concatenate(
-        [components_spec, polynomials_spec[None, :, :] * np.ones((numObj, 1, nspec))],
+        [components_spec, polynomials_spec[None, :, :] * np.ones((n_obj, 1, nspec))],
         axis=-2,
-    )  # [numObj, numComponents+numPoly, nspec]
+    )  # [n_obj, n_components+n_poly, nspec]
 
     print("shapes", components_prior_mean.shape, polynomials_prior_mean.shape)
     mu = np.concatenate([components_prior_mean, polynomials_prior_mean], axis=-1)
@@ -94,36 +94,36 @@ def bayesianpca_speconly(
 
 @jit
 def bayesianpca_specandphot(
-    components_spec,  # [numObj, numComponents, nspec]
-    components_phot,  # [numObj, numComponents, nphot]
-    polynomials_spec,  # [numPoly, nspec]
-    ellfactors,  # [numObj, ]
-    spec,  # [numObj, nspec]
-    spec_invvar,  # [numObj, nspec]
-    spec_loginvvar,  # [numObj, nspec]
-    phot,  # [numObj, nphot]
-    phot_invvar,  # [numObj, nphot]
-    phot_loginvvar,  # [numObj, nphot]
-    components_prior_mean,  # [numObj, numComponents]
-    components_prior_loginvvar,  # [numObj, numComponents]
-    polynomials_prior_mean,  # [numObj, numPoly]
-    polynomials_prior_loginvvar,  # [numObj, numPoly]
+    components_spec,  # [n_obj, n_components, nspec]
+    components_phot,  # [n_obj, n_components, nphot]
+    polynomials_spec,  # [n_poly, nspec]
+    ellfactors,  # [n_obj, ]
+    spec,  # [n_obj, nspec]
+    spec_invvar,  # [n_obj, nspec]
+    spec_loginvvar,  # [n_obj, nspec]
+    phot,  # [n_obj, nphot]
+    phot_invvar,  # [n_obj, nphot]
+    phot_loginvvar,  # [n_obj, nphot]
+    components_prior_mean,  # [n_obj, n_components]
+    components_prior_loginvvar,  # [n_obj, n_components]
+    polynomials_prior_mean,  # [n_obj, n_poly]
+    polynomials_prior_loginvvar,  # [n_obj, n_poly]
 ):
 
-    numObj, nspec = np.shape(spec)[0], np.shape(spec)[1]
-    numComponents = np.shape(components_spec)[1]
-    numPoly = np.shape(polynomials_spec)[0]
+    n_obj, nspec = np.shape(spec)[0], np.shape(spec)[1]
+    n_components = np.shape(components_spec)[1]
+    n_poly = np.shape(polynomials_spec)[0]
     nphot = np.shape(phot)[1]
 
     components_spec_all = np.concatenate(
-        [components_spec, polynomials_spec[None, :, :] * np.ones((numObj, 1, nspec))],
+        [components_spec, polynomials_spec[None, :, :] * np.ones((n_obj, 1, nspec))],
         axis=-2,
-    )  # [numObj, numComponents+numPoly, nspec]
+    )  # [n_obj, n_components+n_poly, nspec]
 
-    zeros = np.zeros((numObj, numPoly, nphot))
+    zeros = np.zeros((n_obj, n_poly, nphot))
     components_phot_all = np.concatenate(
         [components_phot, zeros], axis=1
-    )  # [numObj, numComponents+numPoly, nphot]
+    )  # [n_obj, n_components+n_poly, nphot]
 
     mu = np.concatenate([components_prior_mean, polynomials_prior_mean], axis=-1)
     logmuinvvar = np.concatenate(
@@ -212,10 +212,10 @@ def bayesianpca_spec_and_specandphot(params_list, data_batch, aux_data):
     ones = np.ones((bs, 1))
     # batch_index_wave = np.zeros((bs,), int)
 
-    numComponents = pcacomponents_speconly.shape[0]
-    numSpecPixels = spec.shape[1]
-    indices_0, indices_1 = batch_indices(batch_index_wave, numComponents, numSpecPixels)
-    (polynomials_spec, numSpecPix, components_prior) = aux_data
+    n_components = pcacomponents_speconly.shape[0]
+    n_pix_specels = spec.shape[1]
+    indices_0, indices_1 = batch_indices(batch_index_wave, n_components, n_pix_specels)
+    (polynomials_spec, n_pix_spec, components_prior) = aux_data
 
     pcacomponents_speconly_atz = pcacomponents_speconly[indices_0, indices_1]
     components_phot_speconly = np.sum(
@@ -236,19 +236,18 @@ def bayesianpca_spec_and_specandphot(params_list, data_batch, aux_data):
         theta_std_speconly,
         specmod_map_speconly,
     ) = bayesianpca_speconly(
-        pcacomponents_speconly_atz,  # [numObj, numComponents, nspec]
-        polynomials_spec,  # [numPoly, nspec]
-        spec,  # [numObj, nspec]
-        spec_invvar,  # [numObj, nspec]
-        spec_loginvvar,  # [numObj, nspec]
-        components_prior_mean_speconly,  # [numObj, numComponents]
-        components_prior_loginvvar_speconly,  # [numObj, numComponents]
-        polynomials_prior_mean_speconly[None, :] * ones,  # [numObj, numPoly]
-        polynomials_prior_loginvvar_speconly[None, :] * ones,  # [numObj, numPoly]
+        pcacomponents_speconly_atz,  # [n_obj, n_components, nspec]
+        polynomials_spec,  # [n_poly, nspec]
+        spec,  # [n_obj, nspec]
+        spec_invvar,  # [n_obj, nspec]
+        spec_loginvvar,  # [n_obj, nspec]
+        components_prior_mean_speconly,  # [n_obj, n_components]
+        components_prior_loginvvar_speconly,  # [n_obj, n_components]
+        polynomials_prior_mean_speconly[None, :] * ones,  # [n_obj, n_poly]
+        polynomials_prior_loginvvar_speconly[None, :] * ones,  # [n_obj, n_poly]
     )
     photmod_map_speconly = np.sum(
-        components_phot_speconly[:, :, :]
-        * theta_map_speconly[:, 0:numComponents, None],
+        components_phot_speconly[:, :, :] * theta_map_speconly[:, 0:n_components, None],
         axis=1,
     )
 
@@ -271,20 +270,20 @@ def bayesianpca_spec_and_specandphot(params_list, data_batch, aux_data):
         specmod_map_specandphot,
         photmod_map_specandphot,
     ) = bayesianpca_specandphot(
-        pcacomponents_specandphot_atz,  # [numObj, numComponents, nspec]
-        components_phot_specandphot,  # [numObj, numComponents, nphot]
-        polynomials_spec,  # [numPoly, nspec]
-        ellfactors,  # [numObj, ]
-        spec,  # [numObj, nspec]
-        spec_invvar,  # [numObj, nspec]
-        spec_loginvvar,  # [numObj, nspec]
-        phot,  # [numObj, nphot]
-        phot_invvar,  # [numObj, nphot]
-        phot_loginvvar,  # [numObj, nphot]
-        components_prior_mean_specandphot,  # [numObj, numComponents]
-        components_prior_loginvvar_specandphot,  # [numObj, numComponents]
-        polynomials_prior_mean_specandphot[None, :] * ones,  # [numObj, numPoly]
-        polynomials_prior_loginvvar_specandphot[None, :] * ones,  # [numObj, numPoly]
+        pcacomponents_specandphot_atz,  # [n_obj, n_components, nspec]
+        components_phot_specandphot,  # [n_obj, n_components, nphot]
+        polynomials_spec,  # [n_poly, nspec]
+        ellfactors,  # [n_obj, ]
+        spec,  # [n_obj, nspec]
+        spec_invvar,  # [n_obj, nspec]
+        spec_loginvvar,  # [n_obj, nspec]
+        phot,  # [n_obj, nphot]
+        phot_invvar,  # [n_obj, nphot]
+        phot_loginvvar,  # [n_obj, nphot]
+        components_prior_mean_specandphot,  # [n_obj, n_components]
+        components_prior_loginvvar_specandphot,  # [n_obj, n_components]
+        polynomials_prior_mean_specandphot[None, :] * ones,  # [n_obj, n_poly]
+        polynomials_prior_loginvvar_specandphot[None, :] * ones,  # [n_obj, n_poly]
     )
     return (
         logfml_speconly,
@@ -317,19 +316,19 @@ def loss_spec_and_specandphot(params_list, data_batch, aux_data):
     return -np.sum(logfml_specandphot + logfml_speconly)
 
 
-def init_params(key, numObj, numComponents, numPoly, lamgridsize):
+def init_params(key, n_obj, n_components, n_poly, lamgridsize):
 
-    pcacomponents_prior = PriorModel(numComponents)
+    pcacomponents_prior = PriorModel(n_components)
 
-    ells = jax.random.normal(key, (numObj,))
-    pcacomponents_speconly = jax.random.normal(key, (numComponents, lamgridsize))
+    ells = jax.random.normal(key, (n_obj,))
+    pcacomponents_speconly = jax.random.normal(key, (n_components, lamgridsize))
     components_prior_params_speconly = pcacomponents_prior.random(key)
-    polynomials_prior_mean_speconly = jax.random.normal(key, (numPoly,))
-    polynomials_prior_loginvvar_speconly = jax.random.normal(key, (numPoly,))
-    pcacomponents_specandphot = jax.random.normal(key, (numComponents, lamgridsize))
+    polynomials_prior_mean_speconly = jax.random.normal(key, (n_poly,))
+    polynomials_prior_loginvvar_speconly = jax.random.normal(key, (n_poly,))
+    pcacomponents_specandphot = jax.random.normal(key, (n_components, lamgridsize))
     components_prior_params_specandphot = pcacomponents_prior.random(key)
-    polynomials_prior_mean_specandphot = jax.random.normal(key, (numPoly,))
-    polynomials_prior_loginvvar_specandphot = jax.random.normal(key, (numPoly,))
+    polynomials_prior_mean_specandphot = jax.random.normal(key, (n_poly,))
+    polynomials_prior_loginvvar_specandphot = jax.random.normal(key, (n_poly,))
     params = [
         pcacomponents_speconly,
         components_prior_params_speconly,
