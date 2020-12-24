@@ -251,6 +251,8 @@ class DataPipeline:
         print("Initial phot shape:", self.phot.shape)
         # spec[spec <= 0] = np.nan
         self.spec_invvar[self.spec_invvar <= 0] = 0
+        self.spec_invvar[~np.isfinite(self.spec)] = 0
+        self.spec_invvar[~np.isfinite(self.spec_invvar)] = 0
 
         if subsampling > 1:
             self.spec = self.spec[:, ::subsampling]
@@ -258,14 +260,6 @@ class DataPipeline:
             self.spec_invvar = self.spec_invvar[:, ::subsampling]
             self.index_wave = self.index_wave // subsampling
             self.index_transfer_redshift = self.index_transfer_redshift // subsampling
-
-        ind = ~np.isfinite(self.spec)
-        ind |= ~np.isfinite(self.spec_invvar)
-        # ind |= spec <= 0
-        ind |= self.spec_invvar <= 0
-        ind = np.where(ind)[0]
-        self.spec[ind] = 0.0
-        self.spec_invvar[ind] = 0.0
 
         # Masking sky lines
         lamsize_spec = self.spec.shape[1]
@@ -435,12 +429,12 @@ class DataPipeline:
         batch_index_wave_ext = batch_index_wave[:, None] + np.arange(
             batch_spec.shape[1]
         )
-        print(
-            "Number of negative wave indices:",
-            np.sum(batch_index_wave < 0),
-            np.sum(batch_index_wave_ext < 0),
-        )
         if np.sum(batch_index_wave_ext < 0) > 0:
+            print(
+                "Number of negative wave indices:",
+                np.sum(batch_index_wave < 0),
+                np.sum(batch_index_wave_ext < 0),
+            )
             exit(1)
         # batch_index_wave_ext[batch_index_wave_ext < 0] = 0
 

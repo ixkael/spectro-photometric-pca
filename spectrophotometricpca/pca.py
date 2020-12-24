@@ -61,7 +61,6 @@ def bayesianpca_speconly(
         axis=-2,
     )  # [n_obj, n_components+n_poly, nspec]
 
-    print("shapes", components_prior_mean.shape, polynomials_prior_mean.shape)
     mu = np.concatenate([components_prior_mean, polynomials_prior_mean], axis=-1)
     logmuinvvar = np.concatenate(
         [polynomials_prior_loginvvar, components_prior_loginvvar], axis=-1
