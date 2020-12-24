@@ -316,11 +316,10 @@ def loss_spec_and_specandphot(params_list, data_batch, aux_data):
     return -np.sum(logfml_specandphot + logfml_speconly)
 
 
-def init_params(key, n_obj, n_components, n_poly, lamgridsize):
+def init_params(key, n_components, n_poly, lamgridsize):
 
     pcacomponents_prior = PriorModel(n_components)
 
-    ells = jax.random.normal(key, (n_obj,))
     pcacomponents_speconly = jax.random.normal(key, (n_components, lamgridsize))
     components_prior_params_speconly = pcacomponents_prior.random(key)
     polynomials_prior_mean_speconly = jax.random.normal(key, (n_poly,))

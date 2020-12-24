@@ -235,7 +235,7 @@ class DataPipeline:
         xbounds[-1] = self.lamgrid[-1] + (self.lamgrid[-1] - xbounds[-2])
         xsizes = np.asarray(np.diff(xbounds))
         # Multiplying by delta lambda in preparation for integral over lambda
-        self.transferfunctions[:, :, :] *= xsizes[None, :, None]
+        self.transferfunctions = self.transferfunctions * xsizes[None, :, None]
 
         # Truncate a small section to reduce memory requirements.
         idx_start = onp.where(self.lamgrid > lambda_start)[0][0]
@@ -376,7 +376,7 @@ class DataPipeline:
         n_pix_sed = self.lamgrid.size
         n_pix_spec = self.spec.shape[1]
         numBands = self.phot.shape[1]
-        lamgrid_spec = lamgrid[
+        lamgrid_spec = self.lamgrid[
             self.lamspec_waveoffset : self.lamspec_waveoffset + n_pix_spec
         ]
         return (

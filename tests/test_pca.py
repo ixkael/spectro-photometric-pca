@@ -42,9 +42,7 @@ def test_bayesianpca_spec_and_specandphot():
     dataPipeline = DataPipeline("data/fake/fake_")
 
     n_components, n_poly = 4, 3
-    params_list, pcacomponents_prior = init_params(
-        key, n_obj, n_components, n_poly, n_pix_sed
-    )
+    params_list, pcacomponents_prior = init_params(key, n_components, n_poly, n_pix_sed)
 
     batchsize = 20
     indices = dataPipeline.ind_train_local
@@ -88,9 +86,7 @@ def test_loss_spec_and_specandphot():
     dataPipeline = DataPipeline("data/fake/fake_")
 
     n_components, n_poly = 4, 3
-    params_list, pcacomponents_prior = init_params(
-        key, n_obj, n_components, n_poly, n_pix_sed
-    )
+    params_list, pcacomponents_prior = init_params(key, n_components, n_poly, n_pix_sed)
 
     batchsize = 20
     polynomials_spec = chebychevPolynomials(n_poly, n_pix_spec)
