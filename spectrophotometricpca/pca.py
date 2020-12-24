@@ -162,7 +162,7 @@ def bayesianpca_specandphot(
     return (logfml, theta_map, theta_std, specmod_map, photmod_map)
 
 
-@partial(jit, static_argnums=(0, 1, 2))
+@partial(jit, static_argnums=(1, 2))
 def batch_indices(start_indices, n_components, npix):
     nobj = start_indices.shape[0]
 
