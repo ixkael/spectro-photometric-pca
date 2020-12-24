@@ -192,7 +192,7 @@ class DataPipeline:
     def __init__(
         self,
         root,
-        N=1,
+        subSampling=1,
         npix_min=1,
         lambda_start=8e2,
         write_subset=False,
@@ -210,23 +210,23 @@ class DataPipeline:
         else:
             self.selected_bands = selected_bands
 
-        if N > 1:
+        if subSampling > 1:
 
             numIR = 0  # 200
             self.lamgrid = np.concatenate(
-                (self.lamgrid[:-numIR][::N], self.lamgrid[-numIR:])
+                (self.lamgrid[:-numIR][::subSampling], self.lamgrid[-numIR:])
             )
             self.transferfunctions = np.hstack(
                 (
-                    self.transferfunctions[:, :-numIR, :][:, ::N, :],
+                    self.transferfunctions[:, :-numIR, :][:, ::subSampling, :],
                     self.transferfunctions[:, -numIR:, :],
                 )
             )
-            self.transferfunctions = self.transferfunctions[::N, :, :]
-            self.transferfunctions_zgrid = self.transferfunctions_zgrid[::N]
-            self.lamspec_waveoffset = self.lamspec_waveoffset // N
+            self.transferfunctions = self.transferfunctions[::subSampling, :, :]
+            self.transferfunctions_zgrid = self.transferfunctions_zgrid[::subSampling]
+            self.lamspec_waveoffset = self.lamspec_waveoffset // subSampling
             # self.initial_pca = np.hstack(
-            #    (self.initial_pca[:, :-numIR][:, ::N], self.initial_pca[:, -numIR:])
+            #    (self.initial_pca[:, :-numIR][:, ::subSampling], self.initial_pca[:, -numIR:])
             # )
 
         xbounds = onp.zeros(self.lamgrid.size + 1)
@@ -252,12 +252,12 @@ class DataPipeline:
         # spec[spec <= 0] = np.nan
         self.spec_invvar[self.spec_invvar <= 0] = 0
 
-        if N > 1:
-            self.spec = self.spec[:, ::N]
-            self.specmod_sdss = self.specmod_sdss[:, ::N]
-            self.spec_invvar = self.spec_invvar[:, ::N]
-            self.index_wave = self.index_wave // N
-            self.index_transfer_redshift = self.index_transfer_redshift[:M] // N
+        if subSampling > 1:
+            self.spec = self.spec[:, ::subSampling]
+            self.specmod_sdss = self.specmod_sdss[:, ::subSampling]
+            self.spec_invvar = self.spec_invvar[:, ::subSampling]
+            self.index_wave = self.index_wave // subSampling
+            self.index_transfer_redshift = self.index_transfer_redshift // subSampling
 
         ind = ~np.isfinite(self.spec)
         ind |= ~np.isfinite(self.spec_invvar)
@@ -373,6 +373,12 @@ class DataPipeline:
         self.specphotscalings = np.ones_like(self.redshifts)
 
     def get_grids(self):
+        numSedPix = self.lamgrid.size
+        numSpecPix = self.spec.shape[1]
+        numBands = self.phot.shape[1]
+        lamgrid_spec = lamgrid[
+            self.lamspec_waveoffset : self.lamspec_waveoffset + numSpecPix
+        ]
         return (
             self.lamgrid,
             self.lam_phot_eff,
@@ -380,6 +386,10 @@ class DataPipeline:
             self.transferfunctions,
             self.transferfunctions_zgrid,
             self.selected_bands,
+            numSedPix,
+            numSpecPix,
+            numBands,
+            lamgrid_spec,
         )
 
     def next_batch(self, indices, batch_size, random_masking=False):
