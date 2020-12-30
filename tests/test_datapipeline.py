@@ -18,9 +18,8 @@ def test_bayesianpca_spec_and_specandphot():
     dataPipeline = DataPipeline("data/fake/fake_")
 
     batchsize = 20
-    data_batch = dataPipeline.next_batch(dataPipeline.ind_train_local, batchsize)
+    data_batch = dataPipeline.next_batch(dataPipeline.indices, batchsize)
 
-    print(dataPipeline.ind_train_local)
     (
         si,
         bs,
