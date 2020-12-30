@@ -175,166 +175,243 @@ def batch_indices(start_indices, n_components, npix):
     return indices_0, indices_1
 
 
-@partial(jit, static_argnums=(1, 2))
-def bayesianpca_spec_and_specandphot(params_list, data_batch, aux_data):
+class PCAModel:
+    def __init__(self, polynomials_spec, prefix=".", suffix=""):
+        self.prefix = "."
+        self.suffix = ""
+        self.polynomials_spec = polynomials_spec
 
-    (
-        pcacomponents_speconly,
-        components_prior_params_speconly,
-        polynomials_prior_mean_speconly,
-        polynomials_prior_loginvvar_speconly,
-        pcacomponents_specandphot,
-        components_prior_params_specandphot,
-        polynomials_prior_mean_specandphot,
-        polynomials_prior_loginvvar_specandphot,
-    ) = params_list
+    @partial(jit, static_argnums=(0, 2, 3))
+    def loss_speconly(
+        self,
+        params,
+        data_batch,
+        polynomials_spec,
+    ):
+        (logfml_speconly, _, _, _, _,) = self.bayesianpca_speconly(
+            params,
+            data_batch,
+            polynomials_spec,
+        )
+        return -np.sum(logfml_speconly)
 
-    (
-        si,
-        bs,
-        batch_index_wave,
-        batch_index_transfer_redshift,
-        spec,
-        spec_invvar,
-        spec_loginvvar,
-        # batch_spec_mask,
-        specphotscaling,
-        phot,
-        phot_invvar,
-        phot_loginvvar,
-        batch_redshifts,
-        batch_transferfunctions,
-        batch_index_wave_ext,
-    ) = data_batch
+    @partial(jit, static_argnums=(0, 2, 3))
+    def loss_specandphot(
+        self,
+        params,
+        data_batch,
+        polynomials_spec,
+    ):
+        (logfml_specandphot, _, _, _, _,) = self.bayesianpca_specandphot(
+            params,
+            data_batch,
+            polynomials_spec,
+        )
+        return -np.sum(logfml_specandphot)
 
-    ellfactors = np.ones_like(batch_redshifts)
-    ones = np.ones((bs, 1))
-    # batch_index_wave = np.zeros((bs,), int)
+    def write_model(self):
 
-    n_components = pcacomponents_speconly.shape[0]
-    n_pix_specels = spec.shape[1]
-    indices_0, indices_1 = batch_indices(batch_index_wave, n_components, n_pix_specels)
-    (polynomials_spec, n_pix_spec, components_prior) = aux_data
+        np.save(self.prefix + "pcacomponents" + self.suffix, self.pcacomponents)
+        np.save(
+            self.prefix + "components_prior_params" + self.suffix,
+            self.components_prior_params,
+        )
+        np.save(
+            self.prefix + "polynomials_prior_mean" + self.suffix,
+            self.polynomials_prior_mean,
+        )
+        np.save(
+            self.prefix + "polynomials_prior_loginvvar" + self.suffix,
+            self.polynomials_prior_loginvvar,
+        )
 
-    pcacomponents_speconly_atz = pcacomponents_speconly[indices_0, indices_1]
-    components_phot_speconly = np.sum(
-        pcacomponents_speconly[None, :, :, None]
-        * batch_transferfunctions[:, None, :, :],
-        axis=2,
-    )
-    components_prior_mean_speconly = PriorModel.get_mean_at_z(
-        components_prior_params_speconly, batch_redshifts
-    )
-    components_prior_loginvvar_speconly = PriorModel.get_loginvvar_at_z(
-        components_prior_params_speconly, batch_redshifts
-    )
+    def load_model(self):
 
-    (
-        logfml_speconly,
-        theta_map_speconly,
-        theta_std_speconly,
-        specmod_map_speconly,
-    ) = bayesianpca_speconly(
-        pcacomponents_speconly_atz,  # [n_obj, n_components, nspec]
-        polynomials_spec,  # [n_poly, nspec]
-        spec,  # [n_obj, nspec]
-        spec_invvar,  # [n_obj, nspec]
-        spec_loginvvar,  # [n_obj, nspec]
-        components_prior_mean_speconly,  # [n_obj, n_components]
-        components_prior_loginvvar_speconly,  # [n_obj, n_components]
-        polynomials_prior_mean_speconly[None, :] * ones,  # [n_obj, n_poly]
-        polynomials_prior_loginvvar_speconly[None, :] * ones,  # [n_obj, n_poly]
-    )
-    photmod_map_speconly = np.sum(
-        components_phot_speconly[:, :, :] * theta_map_speconly[:, 0:n_components, None],
-        axis=1,
-    )
+        self.pcacomponents = np.load(self.prefix + "pcacomponents" + self.suffix)
+        self.components_prior_params = np.load(
+            self.prefix + "components_prior_params" + self.suffix + ".npy",
+        )
+        self.polynomials_prior_mean = np.load(
+            self.prefix + "polynomials_prior_mean" + self.suffix + ".npy",
+        )
+        self.polynomials_prior_loginvvar = np.load(
+            self.prefix + "polynomials_prior_loginvvar" + self.suffix + ".npy",
+        )
 
-    pcacomponents_specandphot_atz = pcacomponents_specandphot[indices_0, indices_1]
-    components_phot_specandphot = np.sum(
-        pcacomponents_specandphot[None, :, :, None]
-        * batch_transferfunctions[:, None, :, :],
-        axis=2,
-    )
-    components_prior_mean_specandphot = PriorModel.get_mean_at_z(
-        components_prior_params_specandphot, batch_redshifts
-    )
-    components_prior_loginvvar_specandphot = PriorModel.get_loginvvar_at_z(
-        components_prior_params_specandphot, batch_redshifts
-    )
-    (
-        logfml_specandphot,
-        theta_map_specandphot,
-        theta_std_specandphot,
-        specmod_map_specandphot,
-        photmod_map_specandphot,
-    ) = bayesianpca_specandphot(
-        pcacomponents_specandphot_atz,  # [n_obj, n_components, nspec]
-        components_phot_specandphot,  # [n_obj, n_components, nphot]
-        polynomials_spec,  # [n_poly, nspec]
-        ellfactors,  # [n_obj, ]
-        spec,  # [n_obj, nspec]
-        spec_invvar,  # [n_obj, nspec]
-        spec_loginvvar,  # [n_obj, nspec]
-        phot,  # [n_obj, nphot]
-        phot_invvar,  # [n_obj, nphot]
-        phot_loginvvar,  # [n_obj, nphot]
-        components_prior_mean_specandphot,  # [n_obj, n_components]
-        components_prior_loginvvar_specandphot,  # [n_obj, n_components]
-        polynomials_prior_mean_specandphot[None, :] * ones,  # [n_obj, n_poly]
-        polynomials_prior_loginvvar_specandphot[None, :] * ones,  # [n_obj, n_poly]
-    )
-    return (
-        logfml_speconly,
-        theta_map_speconly,
-        theta_std_speconly,
-        specmod_map_speconly,
-        photmod_map_speconly,
-        logfml_specandphot,
-        theta_map_specandphot,
-        theta_std_specandphot,
-        specmod_map_specandphot,
-        photmod_map_specandphot,
-    )
+    def init_params(self, key, n_components, n_poly, lamgridsize):
 
+        self.pcacomponents_prior = PriorModel(n_components)
+        self.pcacomponents = jax.random.normal(key, (n_components, lamgridsize))
+        self.components_prior_params = self.pcacomponents_prior.random(key)
+        self.polynomials_prior_mean = jax.random.normal(key, (n_poly,))
+        self.polynomials_prior_loginvvar = jax.random.normal(key, (n_poly,))
 
-@partial(jit, static_argnums=(1, 2))
-def loss_spec_and_specandphot(params_list, data_batch, aux_data):
-    (
-        logfml_speconly,
-        _,
-        _,
-        _,
-        _,
-        logfml_specandphot,
-        _,
-        _,
-        _,
-        _,
-    ) = bayesianpca_spec_and_specandphot(params_list, data_batch, aux_data)
-    return -np.sum(logfml_specandphot + logfml_speconly)
+        self.params = [
+            self.pcacomponents,
+            self.components_prior_params,
+            self.polynomials_prior_mean,
+            self.polynomials_prior_loginvvar,
+        ]
+        return self.params, self.pcacomponents_prior
 
+    @partial(jit, static_argnums=(0, 2, 3))
+    def bayesianpca_speconly(
+        self,
+        params,
+        data_batch,
+        polynomials_spec,
+    ):
+        (
+            pcacomponents_speconly,
+            components_prior_params_speconly,
+            polynomials_prior_mean_speconly,
+            polynomials_prior_loginvvar_speconly,
+        ) = params
 
-def init_params(key, n_components, n_poly, lamgridsize):
+        (
+            si,
+            bs,
+            batch_index_wave,
+            batch_index_transfer_redshift,
+            spec,
+            spec_invvar,
+            spec_loginvvar,
+            # batch_spec_mask,
+            specphotscaling,
+            phot,
+            phot_invvar,
+            phot_loginvvar,
+            batch_redshifts,
+            batch_transferfunctions,
+            batch_index_wave_ext,
+        ) = data_batch
 
-    pcacomponents_prior = PriorModel(n_components)
+        ones = np.ones((bs, 1))
+        # batch_index_wave = np.zeros((bs,), int)
 
-    pcacomponents_speconly = jax.random.normal(key, (n_components, lamgridsize))
-    components_prior_params_speconly = pcacomponents_prior.random(key)
-    polynomials_prior_mean_speconly = jax.random.normal(key, (n_poly,))
-    polynomials_prior_loginvvar_speconly = jax.random.normal(key, (n_poly,))
-    pcacomponents_specandphot = jax.random.normal(key, (n_components, lamgridsize))
-    components_prior_params_specandphot = pcacomponents_prior.random(key)
-    polynomials_prior_mean_specandphot = jax.random.normal(key, (n_poly,))
-    polynomials_prior_loginvvar_specandphot = jax.random.normal(key, (n_poly,))
-    params = [
-        pcacomponents_speconly,
-        components_prior_params_speconly,
-        polynomials_prior_mean_speconly,
-        polynomials_prior_loginvvar_speconly,
-        pcacomponents_specandphot,
-        components_prior_params_specandphot,
-        polynomials_prior_mean_specandphot,
-        polynomials_prior_loginvvar_specandphot,
-    ]
-    return params, pcacomponents_prior
+        n_components = pcacomponents_speconly.shape[0]
+        n_pix_spec = spec.shape[1]
+        indices_0, indices_1 = batch_indices(batch_index_wave, n_components, n_pix_spec)
+
+        pcacomponents_speconly_atz = pcacomponents_speconly[indices_0, indices_1]
+        components_phot_speconly = np.sum(
+            pcacomponents_speconly[None, :, :, None]
+            * batch_transferfunctions[:, None, :, :],
+            axis=2,
+        )
+        components_prior_mean_speconly = PriorModel.get_mean_at_z(
+            components_prior_params_speconly, batch_redshifts
+        )
+        components_prior_loginvvar_speconly = PriorModel.get_loginvvar_at_z(
+            components_prior_params_speconly, batch_redshifts
+        )
+
+        (
+            logfml_speconly,
+            theta_map_speconly,
+            theta_std_speconly,
+            specmod_map_speconly,
+        ) = bayesianpca_speconly(
+            pcacomponents_speconly_atz,  # [n_obj, n_components, nspec]
+            polynomials_spec,  # [n_poly, nspec]
+            spec,  # [n_obj, nspec]
+            spec_invvar,  # [n_obj, nspec]
+            spec_loginvvar,  # [n_obj, nspec]
+            components_prior_mean_speconly,  # [n_obj, n_components]
+            components_prior_loginvvar_speconly,  # [n_obj, n_components]
+            polynomials_prior_mean_speconly[None, :] * ones,  # [n_obj, n_poly]
+            polynomials_prior_loginvvar_speconly[None, :] * ones,  # [n_obj, n_poly]
+        )
+        photmod_map_speconly = np.sum(
+            components_phot_speconly[:, :, :]
+            * theta_map_speconly[:, 0:n_components, None],
+            axis=1,
+        )
+
+        return (
+            logfml_speconly,
+            theta_map_speconly,
+            theta_std_speconly,
+            specmod_map_speconly,
+            photmod_map_speconly,
+        )
+
+    @partial(jit, static_argnums=(0, 2, 3))
+    def bayesianpca_specandphot(
+        self,
+        params,
+        data_batch,
+        polynomials_spec,
+    ):
+        (
+            pcacomponents_specandphot,
+            components_prior_params_specandphot,
+            polynomials_prior_mean_specandphot,
+            polynomials_prior_loginvvar_specandphot,
+        ) = params
+
+        (
+            si,
+            bs,
+            batch_index_wave,
+            batch_index_transfer_redshift,
+            spec,
+            spec_invvar,
+            spec_loginvvar,
+            # batch_spec_mask,
+            specphotscaling,
+            phot,
+            phot_invvar,
+            phot_loginvvar,
+            batch_redshifts,
+            batch_transferfunctions,
+            batch_index_wave_ext,
+        ) = data_batch
+
+        ellfactors = np.ones_like(batch_redshifts)
+        ones = np.ones((bs, 1))
+
+        n_components = pcacomponents_specandphot.shape[0]
+        n_pix_spec = spec.shape[1]
+        indices_0, indices_1 = batch_indices(batch_index_wave, n_components, n_pix_spec)
+        pcacomponents_specandphot_atz = pcacomponents_specandphot[indices_0, indices_1]
+        components_phot_specandphot = np.sum(
+            pcacomponents_specandphot[None, :, :, None]
+            * batch_transferfunctions[:, None, :, :],
+            axis=2,
+        )
+        components_prior_mean_specandphot = PriorModel.get_mean_at_z(
+            components_prior_params_specandphot, batch_redshifts
+        )
+        components_prior_loginvvar_specandphot = PriorModel.get_loginvvar_at_z(
+            components_prior_params_specandphot, batch_redshifts
+        )
+        (
+            logfml_specandphot,
+            theta_map_specandphot,
+            theta_std_specandphot,
+            specmod_map_specandphot,
+            photmod_map_specandphot,
+        ) = bayesianpca_specandphot(
+            pcacomponents_specandphot_atz,  # [n_obj, n_components, nspec]
+            components_phot_specandphot,  # [n_obj, n_components, nphot]
+            polynomials_spec,  # [n_poly, nspec]
+            ellfactors,  # [n_obj, ]
+            spec,  # [n_obj, nspec]
+            spec_invvar,  # [n_obj, nspec]
+            spec_loginvvar,  # [n_obj, nspec]
+            phot,  # [n_obj, nphot]
+            phot_invvar,  # [n_obj, nphot]
+            phot_loginvvar,  # [n_obj, nphot]
+            components_prior_mean_specandphot,  # [n_obj, n_components]
+            components_prior_loginvvar_specandphot,  # [n_obj, n_components]
+            polynomials_prior_mean_specandphot[None, :] * ones,  # [n_obj, n_poly]
+            polynomials_prior_loginvvar_specandphot[None, :] * ones,  # [n_obj, n_poly]
+        )
+        return (
+            logfml_specandphot,
+            theta_map_specandphot,
+            theta_std_specandphot,
+            specmod_map_specandphot,
+            photmod_map_specandphot,
+        )

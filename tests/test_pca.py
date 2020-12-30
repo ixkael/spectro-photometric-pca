@@ -42,62 +42,56 @@ def test_bayesianpca_spec_and_specandphot():
     dataPipeline = DataPipeline("data/fake/fake_")
 
     n_components, n_poly = 4, 3
-    params_list, pcacomponents_prior = init_params(key, n_components, n_poly, n_pix_sed)
+    polynomials_spec = chebychevPolynomials(n_poly, n_pix_spec)
+    pcamodel = PCAModel(polynomials_spec)
+    params_speconly, pcacomponents_prior_speconly = pcamodel.init_params(
+        key, n_components, n_poly, n_pix_sed
+    )
+    params_specandphot, pcacomponents_prior_specandphot = pcamodel.init_params(
+        key, n_components, n_poly, n_pix_sed
+    )
 
     batchsize = 20
     indices = dataPipeline.ind_train_local
     data_batch = dataPipeline.next_batch(indices, batchsize)
-    polynomials_spec = chebychevPolynomials(n_poly, n_pix_spec)
-    aux_data = (polynomials_spec, n_pix_spec, 0)
 
-    result = bayesianpca_spec_and_specandphot(params_list, data_batch, aux_data)
+    result_speconly = pcamodel.bayesianpca_speconly(
+        params_speconly, data_batch, polynomials_spec
+    )
+    result_specandphot = pcamodel.bayesianpca_specandphot(
+        params_specandphot, data_batch, polynomials_spec
+    )
 
-    for x in result:
+    for x in result_speconly + result_specandphot:
         assert np.all((np.isfinite(x)))
 
-    (
-        logfml_speconly,
-        theta_map_speconly,
-        theta_std_speconly,
-        specmod_map_speconly,
-        photmod_map_speconly,
-        logfml_specandphot,
-        theta_map_specandphot,
-        theta_std_specandphot,
-        specmod_map_specandphot,
-        photmod_map_specandphot,
-    ) = result
-    assert_shape(theta_map_speconly, (batchsize, n_components + n_poly))
-    assert_shape(theta_std_speconly, (batchsize, n_components + n_poly))
-    assert_shape(specmod_map_speconly, (batchsize, n_pix_spec))
-    assert_shape(photmod_map_speconly, (batchsize, n_pix_phot))
-    assert_shape(theta_map_specandphot, (batchsize, n_components + n_poly))
-    assert_shape(theta_std_specandphot, (batchsize, n_components + n_poly))
-    assert_shape(specmod_map_specandphot, (batchsize, n_pix_spec))
-    assert_shape(photmod_map_specandphot, (batchsize, n_pix_phot))
+    for result in [result_speconly, result_specandphot]:
+        (
+            logfml,
+            theta_map,
+            theta_std,
+            specmod_map,
+            photmod_map,
+        ) = result
+        assert_shape(theta_map, (batchsize, n_components + n_poly))
+        assert_shape(theta_std, (batchsize, n_components + n_poly))
+        assert_shape(specmod_map, (batchsize, n_pix_spec))
+        assert_shape(photmod_map, (batchsize, n_pix_phot))
 
+    params_all = [params_speconly, params_specandphot]
 
-def test_loss_spec_and_specandphot():
+    @partial(jit, static_argnums=(1, 2))
+    def loss_spec_and_specandphot(params_all, data_batch, polynomials_spec):
+        [params_speconly, params_specandphot] = params_all
+        return pcamodel.loss_speconly(
+            params_speconly, data_batch, polynomials_spec
+        ) + pcamodel.loss_specandphot(params_specandphot, data_batch, polynomials_spec)
 
-    n_obj, n_pix_sed, n_pix_spec, n_pix_phot, n_pix_transfer = 122, 100, 47, 5, 50
-    dataPipeline = DataPipeline.save_fake_data(
-        n_obj, n_pix_sed, n_pix_spec, n_pix_phot, n_pix_transfer
-    )
-    dataPipeline = DataPipeline("data/fake/fake_")
-
-    n_components, n_poly = 4, 3
-    params_list, pcacomponents_prior = init_params(key, n_components, n_poly, n_pix_sed)
-
-    batchsize = 20
-    polynomials_spec = chebychevPolynomials(n_poly, n_pix_spec)
-    aux_data = (polynomials_spec, n_pix_spec, 0)
-
-    data_batch = dataPipeline.next_batch(dataPipeline.ind_train_local, batchsize)
-    loss = loss_spec_and_specandphot(params_list, data_batch, aux_data)
-    assert np.all(np.isfinite(loss))
+    loss_value = loss_spec_and_specandphot(params_all, data_batch, polynomials_spec)
+    assert np.all(np.isfinite(loss_value))
 
     opt_init, opt_update, get_params = jax.experimental.optimizers.adam(1e-3)
-    opt_state = opt_init(params_list)
+    opt_state = opt_init(params_all)
 
     @partial(jit, static_argnums=(2, 3))
     def update(step, opt_state, data_batch, data_aux):
@@ -117,5 +111,7 @@ def test_loss_spec_and_specandphot():
         dataPipeline.batch = 0  # reset batch number
         for j in range(nbatches):
             data_batch = dataPipeline.next_batch(train_indices_reordered, batchsize)
-            loss, opt_state = update(next(itercount), opt_state, data_batch, aux_data)
+            loss, opt_state = update(
+                next(itercount), opt_state, data_batch, polynomials_spec
+            )
             assert np.all(np.isfinite(loss))
