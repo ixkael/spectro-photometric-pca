@@ -63,9 +63,9 @@ def test_results():
     dataPipeline = DataPipeline.save_fake_data(
         n_obj, n_pix_sed, n_pix_spec, n_pix_phot, n_pix_transfer
     )
-    dataPipeline = DataPipeline("data/fake/fake_")
+    dataPipeline = DataPipeline(input_dir="data/fake/fake_")
 
-    prefix, suffix = "fakeprefix_", "_fakesuffix"
+    prefix, suffix = "data/fake/fakeprefix_", "_fakesuffix"
     n_components = 4
     batchsize = 10
     indices = np.arange(n_obj // 4, n_obj // 2)
