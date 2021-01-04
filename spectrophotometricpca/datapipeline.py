@@ -80,17 +80,21 @@ class DataPipeline:
     """
 
     def load_spectrophotometry(
-        self, root, write_subset=False, use_subset=False, subsampling=1
+        self,
+        input_dir="./",
+        write_subset=False,
+        use_subset=False,
+        subsampling=1,
     ):
 
-        self.root = root
+        self.input_dir = input_dir
 
-        self.lamgrid = np.load(self.root + "lamgrid.npy")
-        self.lam_phot_eff = np.load(self.root + "lam_phot_eff.npy")
-        self.lam_phot_size_eff = np.load(self.root + "lam_phot_size_eff.npy")
-        self.transferfunctions = np.load(self.root + "transferfunctions.npy")
+        self.lamgrid = np.load(self.input_dir + "lamgrid.npy")
+        self.lam_phot_eff = np.load(self.input_dir + "lam_phot_eff.npy")
+        self.lam_phot_size_eff = np.load(self.input_dir + "lam_phot_size_eff.npy")
+        self.transferfunctions = np.load(self.input_dir + "transferfunctions.npy")
         self.transferfunctions_zgrid = np.load(
-            self.root + "transferfunctions_zgrid.npy"
+            self.input_dir + "transferfunctions_zgrid.npy"
         )
 
         assert self.transferfunctions.shape[0] == self.transferfunctions_zgrid.size
@@ -101,20 +105,20 @@ class DataPipeline:
         else:
             suffix = ".npy"
 
-        self.chi2s_sdss = np.load(self.root + "chi2s_sdss" + suffix)
+        self.chi2s_sdss = np.load(self.input_dir + "chi2s_sdss" + suffix)
         self.lamspec_waveoffset = int(
-            np.load(self.root + "lamspec_waveoffset" + suffix)
+            np.load(self.input_dir + "lamspec_waveoffset" + suffix)
         )
-        self.index_wave = np.load(self.root + "index_wave" + suffix)
+        self.index_wave = np.load(self.input_dir + "index_wave" + suffix)
         self.index_transfer_redshift = np.load(
-            self.root + "index_transfer_redshift" + suffix
+            self.input_dir + "index_transfer_redshift" + suffix
         )
-        self.spec = np.load(self.root + "spec" + suffix)
-        self.specmod_sdss = np.load(self.root + "spec_mod" + suffix)
-        self.spec_invvar = np.load(self.root + "spec_invvar" + suffix)
-        self.phot = fluxes = np.load(self.root + "phot" + suffix)
-        self.phot_invvar = flux_ivars = np.load(self.root + "phot_invvar" + suffix)
-        self.redshifts = np.load(self.root + "redshifts" + suffix)
+        self.spec = np.load(self.input_dir + "spec" + suffix)
+        self.specmod_sdss = np.load(self.input_dir + "spec_mod" + suffix)
+        self.spec_invvar = np.load(self.input_dir + "spec_invvar" + suffix)
+        self.phot = fluxes = np.load(self.input_dir + "phot" + suffix)
+        self.phot_invvar = flux_ivars = np.load(self.input_dir + "phot_invvar" + suffix)
+        self.redshifts = np.load(self.input_dir + "redshifts" + suffix)
 
         n_obj = self.chi2s_sdss.shape[0]
         assert_shape(self.chi2s_sdss, (n_obj,))
@@ -143,18 +147,18 @@ class DataPipeline:
             self.phot_invvar = self.phot_invvar[:M, :]
             self.index_transfer_redshift = self.index_transfer_redshift[:M]
 
-            np.save(self.root + "index_wave" + suffix, self.index_wave[:M])
+            np.save(self.input_dir + "index_wave" + suffix, self.index_wave[:M])
             np.save(
-                self.root + "index_transfer_redshift2.npy",
+                self.input_dir + "index_transfer_redshift2.npy",
                 self.index_transfer_redshift,
             )
-            np.save(self.root + "redshifts" + suffix, self.redshifts)
-            np.save(self.root + "spec" + suffix, self.spec)
-            np.save(self.root + "chi2s_sdss" + suffix, self.chi2s_sdss)
-            np.save(self.root + "spec_invvar" + suffix, self.spec_invvar)
-            np.save(self.root + "phot" + suffix, self.phot)
-            np.save(self.root + "phot_invvar" + suffix, self.phot_invvar)
-            np.save(self.root + "spec_mod" + suffix, self.specmod_sdss)
+            np.save(self.input_dir + "redshifts" + suffix, self.redshifts)
+            np.save(self.input_dir + "spec" + suffix, self.spec)
+            np.save(self.input_dir + "chi2s_sdss" + suffix, self.chi2s_sdss)
+            np.save(self.input_dir + "spec_invvar" + suffix, self.spec_invvar)
+            np.save(self.input_dir + "phot" + suffix, self.phot)
+            np.save(self.input_dir + "phot_invvar" + suffix, self.phot_invvar)
+            np.save(self.input_dir + "spec_mod" + suffix, self.specmod_sdss)
 
         if subsampling > 1:
 
@@ -207,7 +211,7 @@ class DataPipeline:
 
     def __init__(
         self,
-        root,
+        input_dir="./",
         subsampling=1,
         npix_min=1,
         lambda_start=None,
@@ -216,13 +220,16 @@ class DataPipeline:
     ):
 
         self.load_spectrophotometry(
-            root,
+            input_dir=input_dir,
             write_subset=write_subset,
             use_subset=use_subset,
             subsampling=subsampling,
         )
 
         self.batch = 0
+        self.subsampling = subsampling
+        self.npix_min = npix_min
+        self.lambda_start = lambda_start
 
         # Multiplying by delta lambda in preparation for integral over lambda
         xbounds = onp.zeros(self.lamgrid.size + 1)
@@ -249,8 +256,8 @@ class DataPipeline:
         print("Initial phot shape:", self.phot.shape)
         # spec[spec <= 0] = np.nan
         self.spec_invvar[self.spec_invvar <= 0] = 0
-        self.spec_invvar[~np.isfinite(self.spec)] = 0
-        self.spec_invvar[~np.isfinite(self.spec_invvar)] = 0
+        self.spec_invvar[~onp.isfinite(self.spec)] = 0
+        self.spec_invvar[~onp.isfinite(self.spec_invvar)] = 0
 
         # Masking sky lines
         lamsize_spec = self.spec.shape[1]
@@ -301,7 +308,7 @@ class DataPipeline:
     def get_grids(self):
         n_pix_sed = self.lamgrid.size
         n_pix_spec = self.spec.shape[1]
-        numBands = self.phot.shape[1]
+        n_pix_phot = self.phot.shape[1]
         lamgrid_spec = self.lamgrid[
             self.lamspec_waveoffset : self.lamspec_waveoffset + n_pix_spec
         ]
@@ -313,7 +320,7 @@ class DataPipeline:
             self.transferfunctions_zgrid,
             n_pix_sed,
             n_pix_spec,
-            numBands,
+            n_pix_phot,
             lamgrid_spec,
         )
 
@@ -387,16 +394,92 @@ class DataPipeline:
         self.batchsize = batchsize
         return (indices.shape[0] // self.batchsize) + 1
 
-    def load_reconstructions(self, dataclass):
+    def create_results(self, prefix, suffix, indices, n_components):
+        n_pix_sed = self.lamgrid.size
+        n_pix_spec = self.spec.shape[1]
+        n_pix_phot = self.phot.shape[1]
+        return DataResults(
+            prefix,
+            suffix,
+            indices,
+            n_components,
+            n_pix_sed,
+            n_pix_spec,
+            n_pix_phot,
+            self.input_dir,
+            self.subsampling,
+            self.npix_min,
+            self.lambda_start,
+        )
 
-        self.specmod = np.load(self.prefix + "specmod" + self.suffix + ".npy")
-        self.photmod = np.load(self.prefix + "photmod" + self.suffix + ".npy")
-        self.sedmod = np.load(self.prefix + "sedmod" + self.suffix + ".npy")
-        self.theta = np.load(self.prefix + "latents" + self.suffix + ".npy")
 
-    def write_reconstructions(self, dataclass):
+class DataResults:
+    def get_datapipeline(self):
+        return DataPipeline(
+            input_dir=self.input_dir,
+            subsampling=self.subsampling,
+            npix_min=self.npix_min,
+            lambda_start=self.lambda_start,
+        )
 
-        np.save(self.prefix + "specmod" + self.suffix, self.specmod)
-        np.save(self.prefix + "photmod" + self.suffix, self.photmod)
-        np.save(self.prefix + "sedmod" + self.suffix, self.sedmod)
-        np.save(self.prefix + "latents" + self.suffix, self.theta)
+    def __init__(
+        self,
+        prefix,
+        suffix,
+        indices,
+        n_components,
+        n_pix_sed,
+        n_pix_spec,
+        n_pix_phot,
+        input_dir,
+        subsampling,
+        npix_min,
+        lambda_start,
+    ):
+        self.input_dir = input_dir
+        self.subsampling = subsampling
+        self.npix_min = npix_min
+        self.lambda_start = lambda_start
+
+        self.prefix = prefix
+        self.suffix = suffix
+        n_obj = indices.size
+        self.indices = indices
+        self.logfml = onp.zeros((n_obj,))
+        self.specmod = onp.zeros((n_obj, n_pix_spec))
+        self.photmod = onp.zeros((n_obj, n_pix_phot))
+        self.sedmod = onp.zeros((n_obj, n_pix_sed))
+        self.thetamap = onp.zeros((n_obj, n_components))
+        self.thetastd = onp.zeros((n_obj, n_components))
+
+    def write_batch(
+        self, data_batch, logfml, specmod, photmod, thetamap, thetastd, sedmod
+    ):
+
+        si, bs = data_batch[0], data_batch[1]
+        self.logfml[si : si + bs] = logfml
+        self.specmod[si : si + bs, :] = specmod
+        self.photmod[si : si + bs, :] = photmod
+        self.sedmod[si : si + bs, :] = sedmod
+        self.thetamap[si : si + bs, :] = thetamap
+        self.thetastd[si : si + bs, :] = thetastd
+
+    def load_reconstructions(self):
+
+        self.indices = onp.load(self.prefix + "indices" + self.suffix + ".npy")
+        self.logfml = onp.load(self.prefix + "logfml" + self.suffix + ".npy")
+        self.specmod = onp.load(self.prefix + "specmod" + self.suffix + ".npy")
+        self.photmod = onp.load(self.prefix + "photmod" + self.suffix + ".npy")
+        self.sedmod = onp.load(self.prefix + "sedmod" + self.suffix + ".npy")
+        self.thetamap = onp.load(self.prefix + "thetamap" + self.suffix + ".npy")
+        self.thetastd = onp.load(self.prefix + "thetastd" + self.suffix + ".npy")
+
+    def write_reconstructions(self):
+
+        onp.save(self.prefix + "indices" + self.suffix, self.indices)
+        onp.save(self.prefix + "logfml" + self.suffix, self.logfml)
+        onp.save(self.prefix + "specmod" + self.suffix, self.specmod)
+        onp.save(self.prefix + "photmod" + self.suffix, self.photmod)
+        onp.save(self.prefix + "sedmod" + self.suffix, self.sedmod)
+        onp.save(self.prefix + "thetamap" + self.suffix, self.thetamap)
+        onp.save(self.prefix + "thetastd" + self.suffix, self.thetastd)
