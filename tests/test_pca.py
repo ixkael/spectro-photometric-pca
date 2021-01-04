@@ -68,13 +68,13 @@ def test_bayesianpca_spec_and_specandphot():
     for result in [result_speconly, result_specandphot]:
         (
             logfml,
-            theta_map,
-            theta_std,
+            thetamap,
+            thetastd,
             specmod_map,
             photmod_map,
         ) = result
-        assert_shape(theta_map, (batchsize, n_components + n_poly))
-        assert_shape(theta_std, (batchsize, n_components + n_poly))
+        assert_shape(thetamap, (batchsize, n_components + n_poly))
+        assert_shape(thetastd, (batchsize, n_components + n_poly))
         assert_shape(specmod_map, (batchsize, n_pix_spec))
         assert_shape(photmod_map, (batchsize, n_pix_phot))
 

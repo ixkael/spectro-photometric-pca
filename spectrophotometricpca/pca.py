@@ -70,7 +70,7 @@ def bayesianpca_speconly(
     logmuinvvar = np.log(muinvvar)  # Assume no mask in last dimension
     (
         logfml,
-        theta_map,
+        thetamap,
         theta_cov,
     ) = logmarglike_lineargaussianmodel_twotransfers_jitvmap(
         components_spec_all,
@@ -82,13 +82,13 @@ def bayesianpca_speconly(
         logmuinvvar,
     )
 
-    theta_std = np.diagonal(theta_cov, axis1=1, axis2=2) ** 0.5
+    thetastd = np.diagonal(theta_cov, axis1=1, axis2=2) ** 0.5
 
     # Produce best fit models
-    specmod_map = np.sum(components_spec_all[:, :, :] * theta_map[:, :, None], axis=1)
+    specmod_map = np.sum(components_spec_all[:, :, :] * thetamap[:, :, None], axis=1)
     # chi2_spec = np.sum((specmod_map - spec) ** 2 * spec_invvar, axis=-1)
 
-    return (logfml, theta_map, theta_std, specmod_map)
+    return (logfml, thetamap, thetastd, specmod_map)
 
 
 @jit
@@ -133,7 +133,7 @@ def bayesianpca_specandphot(
     logmuinvvar = np.log(muinvvar)  # Assume no mask in last dimension
     (
         logfml,
-        theta_map,
+        thetamap,
         theta_cov,
     ) = logmarglike_lineargaussianmodel_threetransfers_jitvmap(
         ellfactors,
@@ -150,15 +150,15 @@ def bayesianpca_specandphot(
         logmuinvvar,
     )
 
-    theta_std = np.diagonal(theta_cov, axis1=1, axis2=2) ** 0.5
+    thetastd = np.diagonal(theta_cov, axis1=1, axis2=2) ** 0.5
 
     # Produce best fit models
-    specmod_map = np.sum(components_spec_all[:, :, :] * theta_map[:, :, None], axis=1)
-    photmod_map = np.sum(components_phot_all[:, :, :] * theta_map[:, :, None], axis=1)
+    specmod_map = np.sum(components_spec_all[:, :, :] * thetamap[:, :, None], axis=1)
+    photmod_map = np.sum(components_phot_all[:, :, :] * thetamap[:, :, None], axis=1)
     # chi2_spec = np.sum((specmod_map - spec) ** 2 * spec_invvar, axis=-1)
     # chi2_phot = np.sum((photmod_map - phot) ** 2 * phot_invvar, axis=-1)
 
-    return (logfml, theta_map, theta_std, specmod_map, photmod_map)
+    return (logfml, thetamap, thetastd, specmod_map, photmod_map)
 
 
 @partial(jit, static_argnums=(1, 2))
@@ -308,8 +308,8 @@ class PCAModel:
 
         (
             logfml_speconly,
-            theta_map_speconly,
-            theta_std_speconly,
+            thetamap_speconly,
+            thetastd_speconly,
             specmod_map_speconly,
         ) = bayesianpca_speconly(
             pcacomponents_speconly_atz,  # [n_obj, n_components, nspec]
@@ -324,14 +324,14 @@ class PCAModel:
         )
         photmod_map_speconly = np.sum(
             components_phot_speconly[:, :, :]
-            * theta_map_speconly[:, 0:n_components, None],
+            * thetamap_speconly[:, 0:n_components, None],
             axis=1,
         )
 
         return (
             logfml_speconly,
-            theta_map_speconly,
-            theta_std_speconly,
+            thetamap_speconly,
+            thetastd_speconly,
             specmod_map_speconly,
             photmod_map_speconly,
         )
@@ -388,8 +388,8 @@ class PCAModel:
         )
         (
             logfml_specandphot,
-            theta_map_specandphot,
-            theta_std_specandphot,
+            thetamap_specandphot,
+            thetastd_specandphot,
             specmod_map_specandphot,
             photmod_map_specandphot,
         ) = bayesianpca_specandphot(
@@ -410,8 +410,8 @@ class PCAModel:
         )
         return (
             logfml_specandphot,
-            theta_map_specandphot,
-            theta_std_specandphot,
+            thetamap_specandphot,
+            thetastd_specandphot,
             specmod_map_specandphot,
             photmod_map_specandphot,
         )
