@@ -65,7 +65,7 @@ def test_results():
     )
     dataPipeline = DataPipeline("data/fake/fake_")
 
-    prefix, suffix = "test_", "_test"
+    prefix, suffix = "fakeprefix_", "_fakesuffix"
     n_components = 4
     batchsize = 10
     indices = np.arange(n_obj // 4, n_obj // 2)
