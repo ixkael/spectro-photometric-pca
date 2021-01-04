@@ -394,11 +394,11 @@ class DataPipeline:
         self.batchsize = batchsize
         return (indices.shape[0] // self.batchsize) + 1
 
-    def create_results(self, prefix, suffix, indices, n_components):
+    def get_resultsPipeline(self, prefix, suffix, indices, n_components):
         n_pix_sed = self.lamgrid.size
         n_pix_spec = self.spec.shape[1]
         n_pix_phot = self.phot.shape[1]
-        return DataResults(
+        return ResultsPipeline(
             prefix,
             suffix,
             indices,
@@ -413,8 +413,8 @@ class DataPipeline:
         )
 
 
-class DataResults:
-    def get_datapipeline(self):
+class ResultsPipeline:
+    def get_dataPipeline(self):
         return DataPipeline(
             input_dir=self.input_dir,
             subsampling=self.subsampling,

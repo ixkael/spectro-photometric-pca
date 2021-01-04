@@ -71,9 +71,11 @@ def test_results():
     indices = np.arange(n_obj // 4, n_obj // 2)
     n_obj_out = indices.size
 
-    dataResults = dataPipeline.create_results(prefix, suffix, indices, n_components)
+    resultsPipeline = dataPipeline.get_resultsPipeline(
+        prefix, suffix, indices, n_components
+    )
 
-    dataPipeline2 = dataResults.get_datapipeline()
+    dataPipeline2 = resultsPipeline.get_dataPipeline()
     n_batches = dataPipeline2.get_nbatches(indices, batchsize)
 
     # TODO: assert content of dataPipeline and dataPipeline2 equal
@@ -90,7 +92,7 @@ def test_results():
 
         si, bs = data_batch[0], data_batch[1]
         print(si, si + bs)
-        dataResults.write_batch(
+        resultsPipeline.write_batch(
             data_batch,
             logfml[si : si + bs],
             specmod[si : si + bs, :],
@@ -100,20 +102,20 @@ def test_results():
             sedmod[si : si + bs, :],
         )
 
-    np.allclose(logfml, dataResults.logfml)
-    np.allclose(specmod, dataResults.specmod)
-    np.allclose(photmod, dataResults.photmod)
-    np.allclose(thetamap, dataResults.thetamap)
-    np.allclose(thetastd, dataResults.thetastd)
-    np.allclose(sedmod, dataResults.sedmod)
+    np.allclose(logfml, resultsPipeline.logfml)
+    np.allclose(specmod, resultsPipeline.specmod)
+    np.allclose(photmod, resultsPipeline.photmod)
+    np.allclose(thetamap, resultsPipeline.thetamap)
+    np.allclose(thetastd, resultsPipeline.thetastd)
+    np.allclose(sedmod, resultsPipeline.sedmod)
 
-    dataResults.write_reconstructions()
+    resultsPipeline.write_reconstructions()
 
-    dataResults.load_reconstructions()
+    resultsPipeline.load_reconstructions()
 
-    np.allclose(logfml, dataResults.logfml)
-    np.allclose(specmod, dataResults.specmod)
-    np.allclose(photmod, dataResults.photmod)
-    np.allclose(thetamap, dataResults.thetamap)
-    np.allclose(thetastd, dataResults.thetastd)
-    np.allclose(sedmod, dataResults.sedmod)
+    np.allclose(logfml, resultsPipeline.logfml)
+    np.allclose(specmod, resultsPipeline.specmod)
+    np.allclose(photmod, resultsPipeline.photmod)
+    np.allclose(thetamap, resultsPipeline.thetamap)
+    np.allclose(thetastd, resultsPipeline.thetastd)
+    np.allclose(sedmod, resultsPipeline.sedmod)
