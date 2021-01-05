@@ -52,7 +52,7 @@ def test_bayesianpca_spec_and_specandphot():
     )
 
     batchsize = 20
-    indices = dataPipeline.ind_train_local
+    indices = dataPipeline.indices
     data_batch = dataPipeline.next_batch(indices, batchsize)
 
     result_speconly = pcamodel.bayesianpca_speconly(
@@ -102,12 +102,12 @@ def test_bayesianpca_spec_and_specandphot():
         opt_state = opt_update(step, grads, opt_state)
         return value, opt_state
 
-    nbatches = dataPipeline.get_nbatches(dataPipeline.ind_train_local, batchsize)
+    nbatches = dataPipeline.get_nbatches(dataPipeline.indices, batchsize)
     n_epoch = 2
     itercount = itertools.count()
     for i in range(n_epoch):
-        neworder = jax.random.permutation(key, dataPipeline.ind_train_local.size)
-        train_indices_reordered = np.take(dataPipeline.ind_train_local, neworder)
+        neworder = jax.random.permutation(key, dataPipeline.indices.size)
+        train_indices_reordered = np.take(dataPipeline.indices, neworder)
         dataPipeline.batch = 0  # reset batch number
         for j in range(nbatches):
             data_batch = dataPipeline.next_batch(train_indices_reordered, batchsize)
