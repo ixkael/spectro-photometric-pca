@@ -255,9 +255,10 @@ class DataPipeline:
         print("Initial spec shape:", self.spec.shape)
         print("Initial phot shape:", self.phot.shape)
         # spec[spec <= 0] = np.nan
-        self.spec_invvar[self.spec_invvar <= 0] = 0
         self.spec_invvar[~onp.isfinite(self.spec)] = 0
         self.spec_invvar[~onp.isfinite(self.spec_invvar)] = 0
+        self.spec_invvar[self.spec_invvar < 0] = 0
+        self.spec[~onp.isfinite(self.spec)] = 0
 
         # Masking sky lines
         lamsize_spec = self.spec.shape[1]
@@ -453,7 +454,7 @@ class ResultsPipeline:
         self.thetastd = onp.zeros((n_obj, n_components))
 
     def write_batch(
-        self, data_batch, logfml, specmod, photmod, thetamap, thetastd, sedmod
+        self, data_batch, logfml, thetamap, thetastd, specmod, photmod, sedmod
     ):
 
         si, bs = data_batch[0], data_batch[1]

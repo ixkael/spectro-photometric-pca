@@ -66,13 +66,7 @@ def test_bayesianpca_spec_and_specandphot():
         assert np.all((np.isfinite(x)))
 
     for result in [result_speconly, result_specandphot]:
-        (
-            logfml,
-            thetamap,
-            thetastd,
-            specmod_map,
-            photmod_map,
-        ) = result
+        (logfml, thetamap, thetastd, specmod_map, photmod_map, sedmod) = result
         assert_shape(thetamap, (batchsize, n_components + n_poly))
         assert_shape(thetastd, (batchsize, n_components + n_poly))
         assert_shape(specmod_map, (batchsize, n_pix_spec))

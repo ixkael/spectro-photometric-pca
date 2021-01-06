@@ -81,11 +81,11 @@ def test_results():
     # TODO: assert content of dataPipeline and dataPipeline2 equal
 
     logfml = jax.random.normal(key, (n_obj_out,))
+    thetamap = jax.random.normal(key, (n_obj_out, n_components))
+    thetastd = jax.random.normal(key, (n_obj_out, n_components))
     specmod = jax.random.normal(key, (n_obj_out, n_pix_spec))
     photmod = jax.random.normal(key, (n_obj_out, n_pix_phot))
     sedmod = jax.random.normal(key, (n_obj_out, n_pix_sed))
-    thetamap = jax.random.normal(key, (n_obj_out, n_components))
-    thetastd = jax.random.normal(key, (n_obj_out, n_components))
 
     for _ in range(n_batches):
         data_batch = dataPipeline2.next_batch(indices, batchsize)
@@ -95,10 +95,10 @@ def test_results():
         resultsPipeline.write_batch(
             data_batch,
             logfml[si : si + bs],
+            thetastd[si : si + bs, :],
+            thetastd[si : si + bs, :],
             specmod[si : si + bs, :],
             photmod[si : si + bs, :],
-            thetastd[si : si + bs, :],
-            thetastd[si : si + bs, :],
             sedmod[si : si + bs, :],
         )
 
