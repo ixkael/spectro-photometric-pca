@@ -21,6 +21,8 @@ jaxlib = "^0.1.57"
 click = "^7.1.2"
 chex = "^0.0.3"
 jax = "^0.2.7"
+jupyter = "^1.0.0"
+ipykernel = "^5.4.2"
 
 [tool.poetry.dev-dependencies]
 pytest = "^6.2.1"
