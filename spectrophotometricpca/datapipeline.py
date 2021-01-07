@@ -214,7 +214,7 @@ class DataPipeline:
         input_dir="./",
         subsampling=1,
         npix_min=1,
-        lambda_start=None,
+        lambda_start=8e2,
         write_subset=False,
         use_subset=False,
     ):
@@ -452,21 +452,21 @@ class ResultsPipeline:
 def extract_pca_parameters(runroot):
 
     last = runroot.split("/")[-1]
-    print(last)
-    print(last.split("_")[1::2])
     vals = onp.array(last.split("_")[1::2])
-    n_components, batchsize, subsampling = vals[[0, 2, 3]].astype(int)
-    learningrate = vals[[1]].astype(float)
+    print(vals)
+    n_components, n_poly, batchsize, subsampling = vals[[0, 1, 2, 3]].astype(int)
+    learningrate = vals[-1].astype(float)
 
-    return n_components, learningrate, batchsize, subsampling
+    return n_components, n_poly, batchsize, subsampling, learningrate
 
 
-def pca_file_prefix(n_components, learningrate, batchsize, subsampling):
+def pca_file_prefix(n_components, n_poly, batchsize, subsampling, learningrate):
 
     prefix = "pca_"
-    prefix += str(n_components) + "_ncomponents_"
-    prefix += str(learningrate) + "_learningrate_"
+    prefix += str(n_components) + "_components_"
+    prefix += str(n_poly) + "_poly_"
     prefix += str(batchsize) + "_batchsize_"
-    prefix += str(subsampling) + "_subsampling"
+    prefix += str(subsampling) + "_subsampling_"
+    prefix += str(learningrate) + "_learningrate"
 
     return prefix

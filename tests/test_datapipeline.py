@@ -134,12 +134,17 @@ def test_results():
 
 
 def test_filennames():
-    n_components, learningrate, batchsize, subsampling = 3, 1e-3, 13, 1
-    prefix = pca_file_prefix(n_components, learningrate, batchsize, subsampling)
-    n_components2, learningrate2, batchsize2, subsampling2 = extract_pca_parameters(
-        prefix
-    )
+    n_components, n_poly, batchsize, subsampling, learningrate = 3, 3, 13, 1, 1e-3
+    prefix = pca_file_prefix(n_components, n_poly, batchsize, subsampling, learningrate)
+    (
+        n_components2,
+        n_poly2,
+        batchsize2,
+        subsampling2,
+        learningrate2,
+    ) = extract_pca_parameters(prefix)
     assert n_components == n_components2
+    assert n_poly == n_poly2
     assert learningrate == learningrate2
     assert batchsize == batchsize2
     assert subsampling == subsampling2
