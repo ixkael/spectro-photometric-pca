@@ -59,11 +59,13 @@ def test_bayesianpca_spec_and_specandphot():
 
 def test_results():
 
+    subsampling = 1
     n_obj, n_pix_sed, n_pix_spec, n_pix_phot, n_pix_transfer = 22, 100, 47, 5, 50
     dataPipeline = DataPipeline.save_fake_data(
         n_obj, n_pix_sed, n_pix_spec, n_pix_phot, n_pix_transfer
     )
-    dataPipeline = DataPipeline(input_dir="data/fake/fake_")
+    input_dir = "data/fake/fake_"
+    dataPipeline = DataPipeline(input_dir=input_dir, subsampling=subsampling)
 
     prefix, suffix = "data/fake/fakeprefix_", "_fakesuffix"
     n_components = 4
@@ -71,14 +73,11 @@ def test_results():
     indices = np.arange(n_obj // 4, n_obj // 2)
     n_obj_out = indices.size
 
-    resultsPipeline = dataPipeline.get_resultsPipeline(
-        prefix, suffix, indices, n_components
+    resultsPipeline = ResultsPipeline(
+        prefix, suffix, n_components, dataPipeline, indices
     )
 
-    dataPipeline2 = resultsPipeline.get_dataPipeline()
-    n_batches = dataPipeline2.get_nbatches(indices, batchsize)
-
-    # TODO: assert content of dataPipeline and dataPipeline2 equal
+    n_batches = dataPipeline.get_nbatches(indices, batchsize)
 
     logfml = jax.random.normal(key, (n_obj_out,))
     thetamap = jax.random.normal(key, (n_obj_out, n_components))
@@ -88,7 +87,7 @@ def test_results():
     sedmod = jax.random.normal(key, (n_obj_out, n_pix_sed))
 
     for _ in range(n_batches):
-        data_batch = dataPipeline2.next_batch(indices, batchsize)
+        data_batch = dataPipeline.next_batch(indices, batchsize)
 
         si, bs = data_batch[0], data_batch[1]
         print(si, si + bs)
@@ -119,3 +118,28 @@ def test_results():
     np.allclose(thetamap, resultsPipeline.thetamap)
     np.allclose(thetastd, resultsPipeline.thetastd)
     np.allclose(sedmod, resultsPipeline.sedmod)
+
+    resultsPipeline2 = ResultsPipeline(
+        prefix, suffix, n_components, dataPipeline, indices
+    )
+    resultsPipeline2.load_reconstructions()
+
+    np.allclose(indices, resultsPipeline2.indices)
+    np.allclose(logfml, resultsPipeline2.logfml)
+    np.allclose(specmod, resultsPipeline2.specmod)
+    np.allclose(photmod, resultsPipeline2.photmod)
+    np.allclose(thetamap, resultsPipeline2.thetamap)
+    np.allclose(thetastd, resultsPipeline2.thetastd)
+    np.allclose(sedmod, resultsPipeline2.sedmod)
+
+
+def test_filennames():
+    n_components, learningrate, batchsize, subsampling = 3, 1e-3, 13, 1
+    prefix = pca_file_prefix(n_components, learningrate, batchsize, subsampling)
+    n_components2, learningrate2, batchsize2, subsampling2 = extract_pca_parameters(
+        prefix
+    )
+    assert n_components == n_components2
+    assert learningrate == learningrate2
+    assert batchsize == batchsize2
+    assert subsampling == subsampling2

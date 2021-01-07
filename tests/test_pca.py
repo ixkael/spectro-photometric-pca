@@ -41,9 +41,10 @@ def test_bayesianpca_spec_and_specandphot():
     )
     dataPipeline = DataPipeline("data/fake/fake_")
 
+    prefix, suffix = "data/fake/fake_", ""
     n_components, n_poly = 4, 3
     polynomials_spec = chebychevPolynomials(n_poly, n_pix_spec)
-    pcamodel = PCAModel(polynomials_spec)
+    pcamodel = PCAModel(polynomials_spec, prefix, suffix)
     params_speconly, pcacomponents_prior_speconly = pcamodel.init_params(
         key, n_components, n_poly, n_pix_sed
     )

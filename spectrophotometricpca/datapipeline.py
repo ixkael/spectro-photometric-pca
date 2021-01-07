@@ -395,63 +395,26 @@ class DataPipeline:
         self.batchsize = batchsize
         return (indices.shape[0] // self.batchsize) + 1
 
-    def get_resultsPipeline(self, prefix, suffix, indices, n_components):
-        n_pix_sed = self.lamgrid.size
-        n_pix_spec = self.spec.shape[1]
-        n_pix_phot = self.phot.shape[1]
-        return ResultsPipeline(
-            prefix,
-            suffix,
-            indices,
-            n_components,
-            n_pix_sed,
-            n_pix_spec,
-            n_pix_phot,
-            self.input_dir,
-            self.subsampling,
-            self.npix_min,
-            self.lambda_start,
-        )
-
 
 class ResultsPipeline:
-    def get_dataPipeline(self):
-        return DataPipeline(
-            input_dir=self.input_dir,
-            subsampling=self.subsampling,
-            npix_min=self.npix_min,
-            lambda_start=self.lambda_start,
-        )
-
-    def __init__(
-        self,
-        prefix,
-        suffix,
-        indices,
-        n_components,
-        n_pix_sed,
-        n_pix_spec,
-        n_pix_phot,
-        input_dir,
-        subsampling,
-        npix_min,
-        lambda_start,
-    ):
-        self.input_dir = input_dir
-        self.subsampling = subsampling
-        self.npix_min = npix_min
-        self.lambda_start = lambda_start
+    def __init__(self, prefix, suffix, n_components, dataPipeline, indices=None):
+        n_pix_sed = dataPipeline.lamgrid.size
+        n_pix_spec = dataPipeline.spec.shape[1]
+        n_pix_phot = dataPipeline.phot.shape[1]
+        self.dataPipeline = dataPipeline
 
         self.prefix = prefix
         self.suffix = suffix
-        n_obj = indices.size
-        self.indices = indices
-        self.logfml = onp.zeros((n_obj,))
-        self.specmod = onp.zeros((n_obj, n_pix_spec))
-        self.photmod = onp.zeros((n_obj, n_pix_phot))
-        self.sedmod = onp.zeros((n_obj, n_pix_sed))
-        self.thetamap = onp.zeros((n_obj, n_components))
-        self.thetastd = onp.zeros((n_obj, n_components))
+
+        if indices is not None:
+            n_obj = indices.size
+            self.indices = indices
+            self.logfml = onp.zeros((n_obj,))
+            self.specmod = onp.zeros((n_obj, n_pix_spec))
+            self.photmod = onp.zeros((n_obj, n_pix_phot))
+            self.sedmod = onp.zeros((n_obj, n_pix_sed))
+            self.thetamap = onp.zeros((n_obj, n_components))
+            self.thetastd = onp.zeros((n_obj, n_components))
 
     def write_batch(
         self, data_batch, logfml, thetamap, thetastd, specmod, photmod, sedmod
@@ -484,3 +447,26 @@ class ResultsPipeline:
         onp.save(self.prefix + "sedmod" + self.suffix, self.sedmod)
         onp.save(self.prefix + "thetamap" + self.suffix, self.thetamap)
         onp.save(self.prefix + "thetastd" + self.suffix, self.thetastd)
+
+
+def extract_pca_parameters(runroot):
+
+    last = runroot.split("/")[-1]
+    print(last)
+    print(last.split("_")[1::2])
+    vals = onp.array(last.split("_")[1::2])
+    n_components, batchsize, subsampling = vals[[0, 2, 3]].astype(int)
+    learningrate = vals[[1]].astype(float)
+
+    return n_components, learningrate, batchsize, subsampling
+
+
+def pca_file_prefix(n_components, learningrate, batchsize, subsampling):
+
+    prefix = "pca_"
+    prefix += str(n_components) + "_ncomponents_"
+    prefix += str(learningrate) + "_learningrate_"
+    prefix += str(batchsize) + "_batchsize_"
+    prefix += str(subsampling) + "_subsampling"
+
+    return prefix
