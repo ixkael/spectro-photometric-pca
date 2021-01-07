@@ -26,13 +26,13 @@ from pca import *
 @click.argument("input_dir", type=click.Path(exists=True), default="data/dr16eboss")
 # @click.option("--input_dir", required=True, type=str, help="Root directory of data set")
 @click.option(
-    "--name",
+    "--dataname",
     default=None,
     callback=lambda c, p, v: v if v else c.params["input_dir"].split("/")[-1],
     help="Number of epochs",
 )
 @click.option(
-    "--prefix",
+    "--results_dir",
     default="/Users/bl/spectro-photometric-encoder-results/",
     type=click.Path(exists=True),
     show_default=True,
@@ -92,8 +92,8 @@ from pca import *
 # flag.DEFINE_integer("computeofficialredshiftposteriors", 0, "")
 def main(
     input_dir,
-    name,
-    prefix,
+    dataname,
+    results_dir,
     n_epochs,
     batchsize,
     n_components,
@@ -112,47 +112,23 @@ def main(
         os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
     print("Number of threads:", n_threads)
 
-    suffix = ""
-
-    prefix_off = (
-        prefix
-        + name
-        + "/pcaoff_"
-        + str(n_components)
-        + "_n_components_"
-        + str(subsampling)
-        + "_subsampling"
-        + "/"
+    output_dir = results_dir + dataname + "/"
+    output_dir += pca_file_prefix(
+        n_components, n_poly, batchsize, subsampling, learningrate
     )
+    output_dir += "/"
+    output_prefix = output_dir + ""
 
-    prefix = (
-        prefix
-        + name
-        + "/pca_"
-        + str(n_components)
-        + "_n_components_"
-        + str(learningrate)
-        + "_learningrate_"
-        + str(batchsize)
-        + "_batchsize_"
-        + str(subsampling)
-        + "_subsampling"
-        + "/"
-    )
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
 
-    print("prefix : \n", prefix)
-    print("prefix_off : \n", prefix_off)
-    if not os.path.exists(prefix_off + "plots"):
-        os.makedirs(prefix_off + "plots")
-    if not os.path.exists(prefix + "plots"):
-        os.makedirs(prefix + "plots")
+    print("prefix : \n", output_prefix)
 
     datapipe = DataPipeline(
         input_dir=input_dir + "/",
         subsampling=subsampling,
         use_subset=use_subset,
         write_subset=write_subset,
-        lambda_start=8e2,
     )
 
     # Prepare copies of training indices
@@ -177,23 +153,18 @@ def main(
         lamgrid_spec,
     ) = datapipe.get_grids()
 
-    # np.save(prefix + "lamgrid", lamgrid) no need?
-    # np.save(prefix + "lamspec_waveoffset", datapipe.lamspec_waveoffset) no need?
-    np.save(prefix + "train_indices", indices_train)
-    np.save(prefix + "valid_indices", indices_valid)
-    # np.save(prefix+'transferfunctions', datapipe.transferfunctions) no need?
-    # p.save(prefix + "transferfunctions_zgrid", datapipe.transferfunctions_zgrid) no need?
+    np.save(output_dir + "/train_indices", indices_train)
+    np.save(output_dir + "/valid_indices", indices_valid)
 
     # output chi2s of SDSS models
     # np.save(prefix + "valid_chi2s_sdss", self.chi2s_sdss[datapipe.ind_valid_orig])
 
     # parameters:  creating the priors, functions of redshift
     # Initial valuesn_components, n_poly, lamgridsize
-
     polynomials_spec = chebychevPolynomials(n_poly, n_pix_spec)
 
-    pcamodel_speconly = PCAModel(polynomials_spec, prefix, "speconly")
-    pcamodel_specandphot = PCAModel(polynomials_spec, prefix, "specandphot")
+    pcamodel_speconly = PCAModel(polynomials_spec, output_prefix, "_speconly")
+    pcamodel_specandphot = PCAModel(polynomials_spec, output_prefix, "_specandphot")
     params_speconly, pcacomponents_prior_speconly = pcamodel_speconly.init_params(
         key, n_components, n_poly, n_pix_sed
     )
@@ -251,7 +222,7 @@ def main(
             # updated_batch_ells[updated_batch_ells < 0] = 1.0
             # train_specphotscaling[neworder[si : si + bs]] = updated_batch_ells
 
-        loss = losses_train[i, :].mean()
+        loss = np.mean(losses_train[i, :])
 
         print(
             "> loss: %.5e" % loss,
@@ -277,11 +248,19 @@ def main(
         if i % output_valid_steps == 0:
 
             print("> Running validation models and data")
-            resultspipe_speconly = datapipe.get_resultsPipeline(
-                prefix, "_speconly", indices_valid, n_components + n_poly
+            resultspipe_speconly = ResultsPipeline(
+                output_prefix,
+                "_speconly",
+                n_components + n_poly,
+                datapipe,
+                indices_valid,
             )
-            resultspipe_specandphot = datapipe.get_resultsPipeline(
-                prefix, "_specandphot", indices_valid, n_components + n_poly
+            resultspipe_specandphot = ResultsPipeline(
+                output_prefix,
+                "_specandphot",
+                n_components + n_poly,
+                datapipe,
+                indices_valid,
             )
 
             datapipe.batch = 0  # reset batch number
@@ -300,7 +279,7 @@ def main(
 
                 losses_valid[i, j] = -np.sum(result_speconly[0] + result_specandphot[0])
 
-            current_validation_loss = np.sum(losses_valid[i, :])
+            current_validation_loss = np.mean(losses_valid[i, :])
 
             resultspipe_speconly.write_reconstructions()
             resultspipe_specandphot.write_reconstructions()
@@ -319,11 +298,7 @@ def main(
             previous_validation_loss2 = previous_validation_loss1
             previous_validation_loss1 = current_validation_loss
 
-            np.save(prefix + "valid_losses", losses_valid[: i + 1, :])
-            np.save(
-                prefix + "valid_index_transfer_redshift",
-                datapipe.index_transfer_redshift[indices_valid],
-            )
+            np.save(output_dir + "/valid_losses", losses_valid[: i + 1, :])
 
     print("Learning finished")
 
