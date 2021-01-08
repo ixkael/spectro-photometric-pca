@@ -412,19 +412,15 @@ class ResultsPipeline:
             self.logfml = onp.zeros((n_obj,))
             self.specmod = onp.zeros((n_obj, n_pix_spec))
             self.photmod = onp.zeros((n_obj, n_pix_phot))
-            self.sedmod = onp.zeros((n_obj, n_pix_sed))
             self.thetamap = onp.zeros((n_obj, n_components))
             self.thetastd = onp.zeros((n_obj, n_components))
 
-    def write_batch(
-        self, data_batch, logfml, thetamap, thetastd, specmod, photmod, sedmod
-    ):
+    def write_batch(self, data_batch, logfml, thetamap, thetastd, specmod, photmod):
 
         si, bs = data_batch[0], data_batch[1]
         self.logfml[si : si + bs] = logfml
         self.specmod[si : si + bs, :] = specmod
         self.photmod[si : si + bs, :] = photmod
-        self.sedmod[si : si + bs, :] = sedmod
         self.thetamap[si : si + bs, :] = thetamap
         self.thetastd[si : si + bs, :] = thetastd
 
@@ -434,7 +430,6 @@ class ResultsPipeline:
         self.logfml = onp.load(self.prefix + "logfml" + self.suffix + ".npy")
         self.specmod = onp.load(self.prefix + "specmod" + self.suffix + ".npy")
         self.photmod = onp.load(self.prefix + "photmod" + self.suffix + ".npy")
-        self.sedmod = onp.load(self.prefix + "sedmod" + self.suffix + ".npy")
         self.thetamap = onp.load(self.prefix + "thetamap" + self.suffix + ".npy")
         self.thetastd = onp.load(self.prefix + "thetastd" + self.suffix + ".npy")
 
@@ -444,7 +439,6 @@ class ResultsPipeline:
         onp.save(self.prefix + "logfml" + self.suffix, self.logfml)
         onp.save(self.prefix + "specmod" + self.suffix, self.specmod)
         onp.save(self.prefix + "photmod" + self.suffix, self.photmod)
-        onp.save(self.prefix + "sedmod" + self.suffix, self.sedmod)
         onp.save(self.prefix + "thetamap" + self.suffix, self.thetamap)
         onp.save(self.prefix + "thetastd" + self.suffix, self.thetastd)
 

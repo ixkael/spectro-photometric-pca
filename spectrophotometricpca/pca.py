@@ -188,7 +188,7 @@ class PCAModel:
         data_batch,
         polynomials_spec,
     ):
-        (logfml_speconly, _, _, _, _, _) = self.bayesianpca_speconly(
+        (logfml_speconly, _, _, _, _) = self.bayesianpca_speconly(
             params,
             data_batch,
             polynomials_spec,
@@ -202,7 +202,7 @@ class PCAModel:
         data_batch,
         polynomials_spec,
     ):
-        (logfml_specandphot, _, _, _, _, _) = self.bayesianpca_specandphot(
+        (logfml_specandphot, _, _, _, _) = self.bayesianpca_specandphot(
             params,
             data_batch,
             polynomials_spec,
@@ -327,18 +327,12 @@ class PCAModel:
             * thetamap_speconly[:, 0:n_components, None],
             axis=1,
         )
-        sedmod_speconly = np.sum(
-            pcacomponents_speconly[None, :, :]
-            * thetamap_speconly[:, 0:n_components, None],
-            axis=1,
-        )
         return (
             logfml_speconly,
             thetamap_speconly,
             thetastd_speconly,
             specmod_map_speconly,
             photmod_map_speconly,
-            sedmod_speconly,
         )
 
     @partial(jit, static_argnums=(0, 2, 3))
@@ -413,16 +407,10 @@ class PCAModel:
             polynomials_prior_mean_specandphot[None, :] * ones,  # [n_obj, n_poly]
             polynomials_prior_loginvvar_specandphot[None, :] * ones,  # [n_obj, n_poly]
         )
-        sedmod_specandphot = np.sum(
-            pcacomponents_specandphot[None, :, :]
-            * thetamap_specandphot[:, 0:n_components, None],
-            axis=1,
-        )
         return (
             logfml_specandphot,
             thetamap_specandphot,
             thetastd_specandphot,
             specmod_map_specandphot,
             photmod_map_specandphot,
-            sedmod_specandphot,
         )
