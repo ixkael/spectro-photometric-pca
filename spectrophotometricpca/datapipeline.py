@@ -89,11 +89,11 @@ class DataPipeline:
 
         self.input_dir = input_dir
 
-        self.lamgrid = np.load(self.input_dir + "lamgrid.npy")
-        self.lam_phot_eff = np.load(self.input_dir + "lam_phot_eff.npy")
-        self.lam_phot_size_eff = np.load(self.input_dir + "lam_phot_size_eff.npy")
-        self.transferfunctions = np.load(self.input_dir + "transferfunctions.npy")
-        self.transferfunctions_zgrid = np.load(
+        self.lamgrid = onp.load(self.input_dir + "lamgrid.npy")
+        self.lam_phot_eff = onp.load(self.input_dir + "lam_phot_eff.npy")
+        self.lam_phot_size_eff = onp.load(self.input_dir + "lam_phot_size_eff.npy")
+        self.transferfunctions = onp.load(self.input_dir + "transferfunctions.npy")
+        self.transferfunctions_zgrid = onp.load(
             self.input_dir + "transferfunctions_zgrid.npy"
         )
 
@@ -105,20 +105,22 @@ class DataPipeline:
         else:
             suffix = ".npy"
 
-        self.chi2s_sdss = np.load(self.input_dir + "chi2s_sdss" + suffix)
+        self.chi2s_sdss = onp.load(self.input_dir + "chi2s_sdss" + suffix)
         self.lamspec_waveoffset = int(
-            np.load(self.input_dir + "lamspec_waveoffset" + suffix)
+            onp.load(self.input_dir + "lamspec_waveoffset" + suffix)
         )
-        self.index_wave = np.load(self.input_dir + "index_wave" + suffix)
-        self.index_transfer_redshift = np.load(
+        self.index_wave = onp.load(self.input_dir + "index_wave" + suffix)
+        self.index_transfer_redshift = onp.load(
             self.input_dir + "index_transfer_redshift" + suffix
         )
-        self.spec = np.load(self.input_dir + "spec" + suffix)
-        self.specmod_sdss = np.load(self.input_dir + "spec_mod" + suffix)
-        self.spec_invvar = np.load(self.input_dir + "spec_invvar" + suffix)
-        self.phot = fluxes = np.load(self.input_dir + "phot" + suffix)
-        self.phot_invvar = flux_ivars = np.load(self.input_dir + "phot_invvar" + suffix)
-        self.redshifts = np.load(self.input_dir + "redshifts" + suffix)
+        self.spec = onp.load(self.input_dir + "spec" + suffix)
+        self.specmod_sdss = onp.load(self.input_dir + "spec_mod" + suffix)
+        self.spec_invvar = onp.load(self.input_dir + "spec_invvar" + suffix)
+        self.phot = fluxes = onp.load(self.input_dir + "phot" + suffix)
+        self.phot_invvar = flux_ivars = onp.load(
+            self.input_dir + "phot_invvar" + suffix
+        )
+        self.redshifts = onp.load(self.input_dir + "redshifts" + suffix)
 
         n_obj = self.chi2s_sdss.shape[0]
         assert_shape(self.chi2s_sdss, (n_obj,))
@@ -426,12 +428,12 @@ class ResultsPipeline:
 
     def load_reconstructions(self):
 
-        self.indices = onp.load(self.prefix + "indices" + self.suffix + ".npy")
-        self.logfml = onp.load(self.prefix + "logfml" + self.suffix + ".npy")
-        self.specmod = onp.load(self.prefix + "specmod" + self.suffix + ".npy")
-        self.photmod = onp.load(self.prefix + "photmod" + self.suffix + ".npy")
-        self.thetamap = onp.load(self.prefix + "thetamap" + self.suffix + ".npy")
-        self.thetastd = onp.load(self.prefix + "thetastd" + self.suffix + ".npy")
+        self.indices = oonp.load(self.prefix + "indices" + self.suffix + ".npy")
+        self.logfml = oonp.load(self.prefix + "logfml" + self.suffix + ".npy")
+        self.specmod = oonp.load(self.prefix + "specmod" + self.suffix + ".npy")
+        self.photmod = oonp.load(self.prefix + "photmod" + self.suffix + ".npy")
+        self.thetamap = oonp.load(self.prefix + "thetamap" + self.suffix + ".npy")
+        self.thetastd = oonp.load(self.prefix + "thetastd" + self.suffix + ".npy")
 
     def write_reconstructions(self):
 
