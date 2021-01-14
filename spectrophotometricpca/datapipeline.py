@@ -397,6 +397,54 @@ class DataPipeline:
         self.batchsize = batchsize
         return (indices.shape[0] // self.batchsize) + 1
 
+    def change_redshift(self, iz, zstep, data_batch):
+
+        (
+            si,
+            bs,
+            batch_index_wave,
+            batch_index_transfer_redshift,
+            spec,
+            spec_invvar,
+            spec_loginvvar,
+            # batch_spec_mask,
+            specphotscaling,
+            phot,
+            phot_invvar,
+            phot_loginvvar,
+            batch_redshifts,
+            batch_transferfunctions,
+            batch_index_wave_ext,
+        ) = data_batch
+
+        batch_transferfunctions = self.transferfunctions[
+            None, iz * zstep, :, :
+        ] * onp.ones((bs, 1, 1))
+
+        batch_index_wave = np.repeat(self.lamspec_waveoffset - iz * zstep, bs)
+        batch_index_wave_ext = batch_index_wave[:, None] + onp.arange(spec.shape[1])
+        # batch_index_wave_ext[batch_index_wave_ext < 0] = 0 # TODO: is this a problem?
+
+        # TODO: something to do about the specphotscaling?
+
+        return (
+            si,
+            bs,
+            batch_index_wave,
+            batch_index_transfer_redshift,
+            spec,
+            spec_invvar,
+            spec_loginvvar,
+            # batch_spec_mask,
+            specphotscaling,
+            phot,
+            phot_invvar,
+            phot_loginvvar,
+            batch_redshifts,
+            batch_transferfunctions,
+            batch_index_wave_ext,
+        )
+
 
 class ResultsPipeline:
     def __init__(self, prefix, suffix, n_components, dataPipeline, indices=None):
@@ -428,12 +476,12 @@ class ResultsPipeline:
 
     def load_reconstructions(self):
 
-        self.indices = oonp.load(self.prefix + "indices" + self.suffix + ".npy")
-        self.logfml = oonp.load(self.prefix + "logfml" + self.suffix + ".npy")
-        self.specmod = oonp.load(self.prefix + "specmod" + self.suffix + ".npy")
-        self.photmod = oonp.load(self.prefix + "photmod" + self.suffix + ".npy")
-        self.thetamap = oonp.load(self.prefix + "thetamap" + self.suffix + ".npy")
-        self.thetastd = oonp.load(self.prefix + "thetastd" + self.suffix + ".npy")
+        self.indices = onp.load(self.prefix + "indices" + self.suffix + ".npy")
+        self.logfml = onp.load(self.prefix + "logfml" + self.suffix + ".npy")
+        self.specmod = onp.load(self.prefix + "specmod" + self.suffix + ".npy")
+        self.photmod = onp.load(self.prefix + "photmod" + self.suffix + ".npy")
+        self.thetamap = onp.load(self.prefix + "thetamap" + self.suffix + ".npy")
+        self.thetastd = onp.load(self.prefix + "thetastd" + self.suffix + ".npy")
 
     def write_reconstructions(self):
 
