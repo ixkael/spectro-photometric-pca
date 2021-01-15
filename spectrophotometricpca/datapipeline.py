@@ -5,26 +5,13 @@ import random
 import os
 import scipy.interpolate
 import astropy.io.fits as pyfits
+from redrock.templates import Template
 
 from chex import assert_shape
 
 key = jax.random.PRNGKey(42)
 
 mask_std_val = 1e2
-
-
-def process_time(start_time, end_time, multiply=1, no_hours=False):
-    dt = (end_time - start_time) * multiply
-    if no_hours:
-        hour = 0
-    else:
-        hour = int(dt / 3600)
-    min = int((dt - 3600 * hour) / 60)
-    sec = int(dt - 3600 * hour - 60 * min)
-    if no_hours:
-        return (min, sec)
-    else:
-        return (hour, min, sec)
 
 
 def create_mask(x, x_var, indices, val=0.0):
@@ -514,3 +501,20 @@ def pca_file_prefix(n_components, n_poly, batchsize, subsampling, learningrate):
     prefix += str(learningrate) + "_learningrate"
 
     return prefix
+
+
+def load_fits_templates(
+    xnew,
+    num_components,
+    directory="/home/bl/Dropbox/repos/spectro-photometric-pca/data/",
+    file="rrtemplate-galaxy.fits",
+):
+    os.environ["RR_TEMPLATE_DIR"] = directory
+    temp = Template(filename=file)
+    y_interp = onp.zeros((num_components, xnew.size))
+    for i in range(num_components):
+        x, y = temp.wave, temp.flux[i, :]
+        y_interp[i, :] = scipy.interpolate.interp1d(
+            x, y, kind="nearest", bounds_error=False, fill_value=0, assume_sorted=True
+        )(xnew)
+    return y_interp

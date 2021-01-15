@@ -143,3 +143,18 @@ def test_filennames():
     assert learningrate == learningrate2
     assert batchsize == batchsize2
     assert subsampling == subsampling2
+
+
+def test_load_fits_templates():
+
+    log_lam1 = np.arange(3.55, 4.02, 0.0001)
+    log_lam2 = np.arange(2.85, 3.55, 0.0001)
+    log_lam = np.concatenate([log_lam1, log_lam2])
+    lam = 10.0 ** log_lam
+
+    num_components = 4
+
+    y_new = load_fits_templates(lam, num_components)
+
+    assert y_new.shape[0] == num_components
+    assert y_new.shape[1] == lam.size
