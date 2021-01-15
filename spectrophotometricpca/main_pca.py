@@ -113,7 +113,7 @@ from pca import *
 )
 @click.option(
     "--speconly",
-    default=False,
+    default=True,
     show_default=True,
     type=bool,
     help="Only using spectroscopy, as opposed to both photometry and spectroscopy",
@@ -161,15 +161,15 @@ def main(
     indices_train = onp.load(input_dir + "/indices_train.npy")
     indices_valid = onp.load(input_dir + "/indices_valid.npy")
     print("Size of training before cuts:", indices_train.size)
-    print("Size of validation before cuts:", indices_valid.size)
     indices_train = indices_train[np.in1d(indices_train, datapipe.indices)]
+    print("Size of training after cuts: ", indices_train.size)
+    print("Size of validation before cuts:", indices_valid.size)
     indices_valid = indices_valid[np.in1d(indices_valid, datapipe.indices)]
-    print("Size of training after cuts:", indices_train.size)
-    print("Size of validation beafterfore cuts:", indices_valid.size)
+    print("Size of validation after cuts:", indices_valid.size)
     onp.save(output_dir + "/indices_train", indices_train)
     onp.save(output_dir + "/indices_valid", indices_valid)
 
-    n_obj_train, valid_n_obj = indices_train.size, indices_valid.size
+    numObj_train, numObj_valid = indices_train.size, indices_valid.size
     numBatches_train = datapipe.get_nbatches(indices_train, batchsize)
     numBatches_valid = datapipe.get_nbatches(indices_valid, batchsize)
 
@@ -251,6 +251,9 @@ def main(
             the_loss, opt_state = update(
                 next(itercount), opt_state, data_batch, polynomials_spec
             )
+            # logfml, thetamap, thetastd, specmod_map, photmod_map = bayesianpca(
+            #    params, data_batch, polynomials_spec
+            # )
             losses_train[i, j] = the_loss.block_until_ready()
             # will force all outputs of jit fct
 
@@ -287,7 +290,7 @@ def main(
         # write model to file!
         pcamodel.write_model()
 
-        if i % output_valid_zsteps == 0:  #  and i > 0:
+        if i > 0 and i % output_valid_zsteps == 0:  #  and i > 0:
 
             print("> Running validation models and data")
             resultspipe = ResultsPipeline(
@@ -325,7 +328,7 @@ def main(
             print("> Running redshift grids (takes a while)")
             zstep = 1
             valid_logpz = (
-                onp.zeros((numBatches_valid, transferfunctions_zgrid[::zstep].size))
+                onp.zeros((numObj_valid, transferfunctions_zgrid[::zstep].size))
                 + onp.nan
             )
             datapipe.batch = 0  # reset batch number
@@ -348,11 +351,12 @@ def main(
                         # will need to investigate why at some point.
                         continue
 
-                    valid_logpz[si : si + bs, iz] = loss_fn(
+                    result = bayesianpca(
                         params,
                         datapipe.change_redshift(iz, zstep, data_batch),
                         polynomials_spec,
                     )
+                    valid_logpz[si : si + bs, iz] = result[0].block_until_ready()
                     xla._xla_callable.cache_clear()
 
                 onp.save(
