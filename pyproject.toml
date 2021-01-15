@@ -14,9 +14,10 @@ repository = "https://github.com/ixkael/spectro-photometric-pca"
 keywords = ["hypermodern"]
 
 [tool.poetry.dependencies]
+redrock = { git = "https://github.com/desihub/redrock.git", branch="master" }
 gasp = { git = "https://github.com/ixkael/gasp.git", branch="main" }
 jaxlib = {url = "https://storage.googleapis.com/jax-releases/cuda101/jaxlib-0.1.57%2Bcuda101-cp38-none-manylinux2010_x86_64.whl"}
-python = "^3.8"
+python = ">=3.8,<3.9"
 click = "^7.1.2"
 chex = "^0.0.3"
 jupyter = "^1.0.0"
@@ -24,6 +25,8 @@ ipykernel = "^5.4.2"
 jax = "^0.2.7"
 dustmaps = "^1.0.6"
 extinction = "^0.4.5"
+numba = "^0.52.0"
+pandas = "^1.2.0"
 
 
 [tool.poetry.dev-dependencies]
