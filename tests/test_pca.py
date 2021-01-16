@@ -45,12 +45,16 @@ def test_bayesianpca_spec_and_specandphot():
     n_components, n_poly = 4, 3
     polynomials_spec = chebychevPolynomials(n_poly, n_pix_spec)
     pcamodel = PCAModel(polynomials_spec, prefix, suffix)
-    params_speconly, pcacomponents_prior_speconly = pcamodel.init_params(
+    pcacomponents_prior_speconly = pcamodel.init_params(
         key, n_components, n_poly, n_pix_sed
     )
-    params_specandphot, pcacomponents_prior_specandphot = pcamodel.init_params(
+    params_speconly = pcamodel.get_params()
+    pcacomponents_prior_specandphot = pcamodel.init_params(
         key, n_components, n_poly, n_pix_sed
     )
+    params_specandphot = pcamodel.get_params()
+    print("pcamodel.get_params()", len(pcamodel.get_params()))
+    pcamodel.set_params(params_specandphot)
 
     batchsize = 20
     indices = dataPipeline.indices
@@ -75,7 +79,7 @@ def test_bayesianpca_spec_and_specandphot():
 
     params_all = [params_speconly, params_specandphot]
 
-    @partial(jit, static_argnums=(1, 2))
+    @partial(jit, static_argnums=())
     def loss_spec_and_specandphot(params_all, data_batch, polynomials_spec):
         [params_speconly, params_specandphot] = params_all
         return pcamodel.loss_speconly(
@@ -88,7 +92,7 @@ def test_bayesianpca_spec_and_specandphot():
     opt_init, opt_update, get_params = jax.experimental.optimizers.adam(1e-3)
     opt_state = opt_init(params_all)
 
-    @partial(jit, static_argnums=(2, 3))
+    @partial(jit, static_argnums=())
     def update(step, opt_state, data_batch, data_aux):
         params = get_params(opt_state)
         value, grads = jax.value_and_grad(loss_spec_and_specandphot)(

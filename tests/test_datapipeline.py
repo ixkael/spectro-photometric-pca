@@ -9,6 +9,39 @@ from chex import assert_shape
 key = jax.random.PRNGKey(42)
 
 
+@partial(jit, static_argnums=(2))
+def take_batch(pcacomponents, start_indices, npix):
+    """
+
+    Parameters
+    ----------
+    pcacomponents: ndarray (n_components, large_nb_of_pixels)
+        Redshift
+    start_indices:  ndarray (nobj, )
+        Indices
+    npix: int
+        Number of pixels to fetch
+
+    Returns
+    -------
+    ndarray (nobj, n_components, npix)
+
+    """
+    n_components, specwavesize = pcacomponents.shape
+    nobj = start_indices.shape[0]
+
+    indices_2d = start_indices[:, None] + np.arange(npix)[None, :]
+
+    indices_0 = np.arange(n_components)[None, :, None] * np.ones(
+        (nobj, n_components, npix), dtype=int
+    )
+    indices_1 = indices_2d[:, None, :] * np.ones((nobj, n_components, npix), dtype=int)
+
+    pcacomponents_atz = pcacomponents[indices_0, indices_1]
+
+    return pcacomponents_atz
+
+
 def test_bayesianpca_spec_and_specandphot():
 
     n_obj, n_pix_sed, n_pix_spec, n_pix_phot, n_pix_transfer = 122, 100, 47, 5, 50

@@ -48,8 +48,8 @@ def bayesianpca_speconly(
     spec_loginvvar,  # [n_obj, nspec]
     components_prior_mean,  # [n_obj, n_components]
     components_prior_loginvvar,  # [n_obj, n_components]
-    polynomials_prior_mean,  # [n_obj, n_poly]
-    polynomials_prior_loginvvar,  # [n_obj, n_poly]
+    polynomials_prior_mean,  # [n_poly]
+    polynomials_prior_loginvvar,  # [n_poly]
 ):
 
     n_obj, nspec = np.shape(spec)[0], np.shape(spec)[1]
@@ -61,9 +61,16 @@ def bayesianpca_speconly(
         axis=-2,
     )  # [n_obj, n_components+n_poly, nspec]
 
-    mu = np.concatenate([components_prior_mean, polynomials_prior_mean], axis=-1)
+    mu = np.concatenate(
+        [components_prior_mean, polynomials_prior_mean[None, :] * np.ones((n_obj, 1))],
+        axis=-1,
+    )
     logmuinvvar = np.concatenate(
-        [polynomials_prior_loginvvar, components_prior_loginvvar], axis=-1
+        [
+            components_prior_loginvvar,
+            polynomials_prior_loginvvar[None, :] * np.ones((n_obj, 1)),
+        ],
+        axis=-1,
     )
     muinvvar = np.exp(logmuinvvar)
 
@@ -105,8 +112,8 @@ def bayesianpca_specandphot(
     phot_loginvvar,  # [n_obj, nphot]
     components_prior_mean,  # [n_obj, n_components]
     components_prior_loginvvar,  # [n_obj, n_components]
-    polynomials_prior_mean,  # [n_obj, n_poly]
-    polynomials_prior_loginvvar,  # [n_obj, n_poly]
+    polynomials_prior_mean,  # [n_poly]
+    polynomials_prior_loginvvar,  # [n_poly]
 ):
 
     n_obj, nspec = np.shape(spec)[0], np.shape(spec)[1]
@@ -124,9 +131,16 @@ def bayesianpca_specandphot(
         [components_phot, zeros], axis=1
     )  # [n_obj, n_components+n_poly, nphot]
 
-    mu = np.concatenate([components_prior_mean, polynomials_prior_mean], axis=-1)
+    mu = np.concatenate(
+        [components_prior_mean, polynomials_prior_mean[None, :] * np.ones((n_obj, 1))],
+        axis=-1,
+    )
     logmuinvvar = np.concatenate(
-        [polynomials_prior_loginvvar, components_prior_loginvvar], axis=-1
+        [
+            components_prior_loginvvar,
+            polynomials_prior_loginvvar[None, :] * np.ones((n_obj, 1)),
+        ],
+        axis=-1,
     )
     muinvvar = np.exp(logmuinvvar)
 
@@ -181,7 +195,7 @@ class PCAModel:
         self.suffix = suffix
         self.polynomials_spec = polynomials_spec
 
-    @partial(jit, static_argnums=(0, 2, 3))
+    @partial(jit, static_argnums=(0))
     def loss_speconly(
         self,
         params,
@@ -195,7 +209,7 @@ class PCAModel:
         )
         return -np.sum(logfml_speconly)
 
-    @partial(jit, static_argnums=(0, 2, 3))
+    @partial(jit, static_argnums=(0))
     def loss_specandphot(
         self,
         params,
@@ -241,20 +255,30 @@ class PCAModel:
     def init_params(self, key, n_components, n_poly, lamgridsize):
 
         self.pcacomponents_prior = PriorModel(n_components)
+
         self.pcacomponents = jax.random.normal(key, (n_components, lamgridsize))
         self.components_prior_params = self.pcacomponents_prior.random(key)
         self.polynomials_prior_mean = jax.random.normal(key, (n_poly,))
         self.polynomials_prior_loginvvar = jax.random.normal(key, (n_poly,))
 
-        self.params = [
+        return self.pcacomponents_prior
+
+    def get_params(self):
+        arr = [
             self.pcacomponents,
             self.components_prior_params,
             self.polynomials_prior_mean,
             self.polynomials_prior_loginvvar,
         ]
-        return self.params, self.pcacomponents_prior
+        return arr
 
-    @partial(jit, static_argnums=(0, 2, 3))
+    def set_params(self, params):
+        self.pcacomponents = params[0]
+        self.components_prior_params = params[1]
+        self.polynomials_prior_mean = params[2]
+        self.polynomials_prior_loginvvar = params[3]
+
+    @partial(jit, static_argnums=(0))
     def bayesianpca_speconly(
         self,
         params,
@@ -286,7 +310,7 @@ class PCAModel:
             batch_index_wave_ext,
         ) = data_batch
 
-        ones = np.ones((bs, 1))
+        # ones = np.ones((bs, 1))
         # batch_index_wave = np.zeros((bs,), int)
 
         n_components = pcacomponents_speconly.shape[0]
@@ -319,8 +343,8 @@ class PCAModel:
             spec_loginvvar,  # [n_obj, nspec]
             components_prior_mean_speconly,  # [n_obj, n_components]
             components_prior_loginvvar_speconly,  # [n_obj, n_components]
-            polynomials_prior_mean_speconly[None, :] * ones,  # [n_obj, n_poly]
-            polynomials_prior_loginvvar_speconly[None, :] * ones,  # [n_obj, n_poly]
+            polynomials_prior_mean_speconly,
+            polynomials_prior_loginvvar_speconly,
         )
         photmod_map_speconly = np.sum(
             components_phot_speconly[:, :, :]
@@ -335,7 +359,7 @@ class PCAModel:
             photmod_map_speconly,
         )
 
-    @partial(jit, static_argnums=(0, 2, 3))
+    @partial(jit, static_argnums=(0))
     def bayesianpca_specandphot(
         self,
         params,
@@ -368,7 +392,7 @@ class PCAModel:
         ) = data_batch
 
         ellfactors = np.ones_like(batch_redshifts)
-        ones = np.ones((bs, 1))
+        # ones = np.ones((bs, 1))
 
         n_components = pcacomponents_specandphot.shape[0]
         n_pix_spec = spec.shape[1]
@@ -385,6 +409,7 @@ class PCAModel:
         components_prior_loginvvar_specandphot = PriorModel.get_loginvvar_at_z(
             components_prior_params_specandphot, batch_redshifts
         )
+
         (
             logfml_specandphot,
             thetamap_specandphot,
@@ -404,8 +429,8 @@ class PCAModel:
             phot_loginvvar,  # [n_obj, nphot]
             components_prior_mean_specandphot,  # [n_obj, n_components]
             components_prior_loginvvar_specandphot,  # [n_obj, n_components]
-            polynomials_prior_mean_specandphot[None, :] * ones,  # [n_obj, n_poly]
-            polynomials_prior_loginvvar_specandphot[None, :] * ones,  # [n_obj, n_poly]
+            polynomials_prior_mean_specandphot,
+            polynomials_prior_loginvvar_specandphot,
         )
         return (
             logfml_specandphot,
