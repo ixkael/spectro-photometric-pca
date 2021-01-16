@@ -506,7 +506,7 @@ def pca_file_prefix(n_components, n_poly, batchsize, subsampling, learningrate):
 def load_fits_templates(
     xnew,
     num_components,
-    directory="/home/bl/Dropbox/repos/spectro-photometric-pca/data/",
+    directory="data/",
     file="rrtemplate-galaxy.fits",
 ):
     os.environ["RR_TEMPLATE_DIR"] = directory
