@@ -51,6 +51,7 @@ key = random.PRNGKey(42)
 
 from datapipeline import *
 from pca import *
+from utils import *
 
 
 @click.command()
@@ -71,28 +72,28 @@ from pca import *
 )
 @click.option(
     "--n_epochs",
-    default=11,
+    default=21,
     show_default=True,
     type=int,
     help="Number of epochs",
 )
 @click.option(
     "--batchsize",
-    default=4096,
+    default=4096 * 8,
     show_default=True,
     type=int,
     help="Batch size for training",
 )
 @click.option(
     "--n_components",
-    default=4,
+    default=8,
     show_default=True,
     type=int,
     help="Number of PCA components",
 )
 @click.option(
     "--subsampling",
-    default=16,
+    default=8,
     show_default=True,
     type=int,
     help="Subsampling of spectra and SEDs",
@@ -118,6 +119,13 @@ from pca import *
     type=bool,
     help="Only using spectroscopy, as opposed to both photometry and spectroscopy",
 )
+@click.option(
+    "--template_file",
+    default="data/rrtemplate-galaxy.fits",
+    show_default=True,
+    type=click.Path(exists=True),
+    help="File for initial PCA",
+)
 # flag.DEFINE_boolean("load", False, "Loading existing model")
 # flag.DEFINE_integer("alldata", 0, "")
 # flag.DEFINE_integer("computeofficialredshiftposteriors", 0, "")
@@ -132,8 +140,9 @@ def main(
     learningrate,
     n_poly,
     speconly,
+    template_file,
 ):
-    output_valid_zsteps = 10
+    output_valid_zsteps = n_epochs - 1
     use_subset = False
     write_subset = False
 
@@ -194,23 +203,26 @@ def main(
     polynomials_spec = chebychevPolynomials(n_poly, n_pix_spec)
 
     pcamodel = PCAModel(polynomials_spec, output_prefix, "")
-    params, pcacomponents_prior = pcamodel.init_params(
-        key, n_components, n_poly, n_pix_sed
+    pcacomponents_prior = pcamodel.init_params(key, n_components, n_poly, n_pix_sed)
+
+    # Load PCA templates
+    pcamodel.pcacomponents = load_fits_templates(
+        lamgrid, n_components, file=template_file
     )
 
     # Initialise optimiser, as well as update operation.
     opt_init, opt_update, get_params = jax.experimental.optimizers.adam(learningrate)
-    opt_state = opt_init(params)
+    opt_state = opt_init(pcamodel.get_params())
 
     if speconly:
 
         suffix = "_speconly"
 
         bayesianpca = jit(
-            pcamodel.bayesianpca_speconly, backend="gpu", static_argnums=(1, 2)
+            pcamodel.bayesianpca_speconly, backend="gpu", static_argnums=()
         )
 
-        @partial(jit, static_argnums=(1, 2), backend="gpu")
+        @partial(jit, static_argnums=(), backend="gpu")
         def loss_fn(params, data_batch, polynomials_spec):
             return pcamodel.loss_speconly(params, data_batch, polynomials_spec)
 
@@ -219,14 +231,14 @@ def main(
         suffix = "_specandphot"
 
         bayesianpca = jit(
-            pcamodel.bayesianpca_specandphot, backend="gpu", static_argnums=(1, 2)
+            pcamodel.bayesianpca_specandphot, backend="gpu", static_argnums=()
         )
 
-        @partial(jit, static_argnums=(1, 2), backend="gpu")
+        @partial(jit, static_argnums=(), backend="gpu")
         def loss_fn(params, data_batch, polynomials_spec):
             return pcamodel.loss_specandphot(params, data_batch, polynomials_spec)
 
-    @partial(jit, static_argnums=(2, 3), backend="gpu")
+    @partial(jit, static_argnums=(), backend="gpu")
     def update(zstep, opt_state, data_batch, data_aux):
         params = get_params(opt_state)
         value, grads = jax.value_and_grad(loss_fn)(params, data_batch, data_aux)
@@ -263,7 +275,7 @@ def main(
             # train_specphotscaling[neworder[si : si + bs]] = updated_batch_ells
 
         loss = onp.mean(losses_train[i, :])
-        params = get_params(opt_state)  # get updated parameter array
+        pcamodel.set_params(get_params(opt_state))  # get updated parameter array
         xla._xla_callable.cache_clear()
 
         print(
@@ -271,21 +283,7 @@ def main(
             " (iteration " + str(i) + ")",
             end=" - ",
         )
-        print(
-            "Elapsed time: %dh %dm %ds" % process_time(start_time, time.time()),
-            end=" - ",
-        )
-        if False:
-            print(
-                "Remaining time: %dh %dm %ds"
-                % process_time(
-                    start_time,
-                    time.time(),
-                    multiply=(n_epochs - i) / float(i + 1 - i_start),
-                ),
-                end="",
-            )
-        print("")
+        print_elapsed_time(start_time)
 
         # write model to file!
         pcamodel.write_model()
@@ -302,15 +300,19 @@ def main(
             )
 
             datapipe.batch = 0  # reset batch number
+            valid_start_time = time.time()
             for j in range(numBatches_valid):
                 data_batch = datapipe.next_batch(indices_valid, batchsize)
 
-                result = bayesianpca(params, data_batch, polynomials_spec)
+                result = bayesianpca(
+                    pcamodel.get_params(), data_batch, polynomials_spec
+                )
                 losses_valid[i, j] = -np.sum(result[0].block_until_ready())
 
                 resultspipe.write_batch(data_batch, *result)
                 del result
 
+            valid_end_time = time.time()
             current_validation_loss = onp.mean(losses_valid[i, :])
 
             resultspipe.write_reconstructions()
@@ -325,8 +327,16 @@ def main(
                 print("Validation loss is worse than the previous two - early stopping")
                 exit(0)
 
-            print("> Running redshift grids (takes a while)")
             zstep = 1
+            print("> Running redshift grids")
+            print(
+                "> should take approximately %dh %dm %ds"
+                % process_time(
+                    valid_start_time,
+                    valid_end_time,
+                    transferfunctions_zgrid[::zstep].size,
+                )
+            )
             valid_logpz = (
                 onp.zeros((numObj_valid, transferfunctions_zgrid[::zstep].size))
                 + onp.nan
@@ -337,14 +347,9 @@ def main(
                 si, bs = data_batch[0], data_batch[1]
 
                 print("> batch", j + 1, "out of", numBatches_valid)
+                batch_start_time = time.time()
 
                 for iz, z in enumerate(transferfunctions_zgrid[::zstep]):
-                    print(
-                        "> redshift",
-                        iz + 1,
-                        "out of",
-                        transferfunctions_zgrid[::zstep].size,
-                    )
 
                     if iz < 2:
                         # currently numerically unstable due to batch_transferfunctions.
@@ -352,12 +357,14 @@ def main(
                         continue
 
                     result = bayesianpca(
-                        params,
+                        pcamodel.get_params(),
                         datapipe.change_redshift(iz, zstep, data_batch),
                         polynomials_spec,
                     )
                     valid_logpz[si : si + bs, iz] = result[0].block_until_ready()
                     xla._xla_callable.cache_clear()
+
+                print_remaining_time(batch_start_time, 0, j, numBatches_valid)
 
                 onp.save(
                     output_dir + "/logpz_zgrid" + suffix,
@@ -367,6 +374,7 @@ def main(
                     output_dir + "/logpz" + suffix,
                     valid_logpz[: si + bs, :],
                 )
+            print_elapsed_time(start_time)
 
             print("> Back to training")
             previous_validation_loss2 = previous_validation_loss1

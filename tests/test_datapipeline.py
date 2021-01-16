@@ -9,7 +9,7 @@ from chex import assert_shape
 key = jax.random.PRNGKey(42)
 
 
-@partial(jit, static_argnums=(2))
+@partial(jit, static_argnums=(2))  # TODO: remove and use gasp version?
 def take_batch(pcacomponents, start_indices, npix):
     """
 
