@@ -202,7 +202,7 @@ class PCAModel:
         data_batch,
         polynomials_spec,
     ):
-        (logfml_speconly, _, _, _, _) = self.bayesianpca_speconly(
+        (logfml_speconly, _, _, _, _, _) = self.bayesianpca_speconly(
             params,
             data_batch,
             polynomials_spec,
@@ -216,7 +216,7 @@ class PCAModel:
         data_batch,
         polynomials_spec,
     ):
-        (logfml_specandphot, _, _, _, _) = self.bayesianpca_specandphot(
+        (logfml_specandphot, _, _, _, _, _) = self.bayesianpca_specandphot(
             params,
             data_batch,
             polynomials_spec,
@@ -241,7 +241,9 @@ class PCAModel:
 
     def load_model(self):
 
-        self.pcacomponents = np.load(self.prefix + "pcacomponents" + self.suffix)
+        self.pcacomponents = np.load(
+            self.prefix + "pcacomponents" + self.suffix + ".npy"
+        )
         self.components_prior_params = np.load(
             self.prefix + "components_prior_params" + self.suffix + ".npy",
         )
@@ -351,12 +353,16 @@ class PCAModel:
             * thetamap_speconly[:, 0:n_components, None],
             axis=1,
         )
+        _, ellfactors, _ = logmarglike_lineargaussianmodel_onetransfer_jitvmap(
+            photmod_map_speconly[:, None, :], phot, phot_invvar, phot_loginvvar
+        )
         return (
             logfml_speconly,
             thetamap_speconly,
             thetastd_speconly,
             specmod_map_speconly,
             photmod_map_speconly,
+            np.ravel(ellfactors),
         )
 
     @partial(jit, static_argnums=(0))
@@ -391,9 +397,6 @@ class PCAModel:
             batch_index_wave_ext,
         ) = data_batch
 
-        ellfactors = np.ones_like(batch_redshifts)
-        # ones = np.ones((bs, 1))
-
         n_components = pcacomponents_specandphot.shape[0]
         n_pix_spec = spec.shape[1]
         indices_0, indices_1 = batch_indices(batch_index_wave, n_components, n_pix_spec)
@@ -408,6 +411,27 @@ class PCAModel:
         )
         components_prior_loginvvar_specandphot = PriorModel.get_loginvvar_at_z(
             components_prior_params_specandphot, batch_redshifts
+        )
+
+        (_, thetamap_speconly, _, _,) = bayesianpca_speconly(
+            pcacomponents_specandphot_atz,  # [n_obj, n_components, nspec]
+            polynomials_spec,  # [n_poly, nspec]
+            spec,  # [n_obj, nspec]
+            spec_invvar,  # [n_obj, nspec]
+            spec_loginvvar,  # [n_obj, nspec]
+            components_prior_mean_specandphot,  # [n_obj, n_components]
+            components_prior_loginvvar_specandphot,  # [n_obj, n_components]
+            polynomials_prior_mean_specandphot,
+            polynomials_prior_loginvvar_specandphot,
+        )
+        # ellfactors = np.ones_like(batch_redshifts)
+        photmod_map_speconly = np.sum(
+            components_phot_specandphot[:, :, :]
+            * thetamap_speconly[:, 0:n_components, None],
+            axis=1,
+        )
+        _, ellfactors, _ = logmarglike_lineargaussianmodel_onetransfer_jitvmap(
+            photmod_map_speconly[:, None, :], phot, phot_invvar, phot_loginvvar
         )
 
         (
@@ -438,4 +462,5 @@ class PCAModel:
             thetastd_specandphot,
             specmod_map_specandphot,
             photmod_map_specandphot,
+            np.ravel(ellfactors),
         )

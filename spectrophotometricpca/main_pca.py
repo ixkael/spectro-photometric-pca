@@ -72,14 +72,14 @@ from utils import *
 )
 @click.option(
     "--n_epochs",
-    default=21,
+    default=2,
     show_default=True,
     type=int,
     help="Number of epochs",
 )
 @click.option(
     "--batchsize",
-    default=4096 * 8,
+    default=1024,  # 4096 * 8,
     show_default=True,
     type=int,
     help="Batch size for training",
@@ -93,7 +93,7 @@ from utils import *
 )
 @click.option(
     "--subsampling",
-    default=8,
+    default=1,
     show_default=True,
     type=int,
     help="Subsampling of spectra and SEDs",
@@ -144,6 +144,7 @@ def main(
 ):
     output_valid_zsteps = n_epochs - 1
     use_subset = False
+    compute_redshifts_pdfs = False
     write_subset = False
 
     output_dir = results_dir + "/" + dataname + "/"
@@ -216,7 +217,7 @@ def main(
 
     if speconly:
 
-        suffix = "_speconly"
+        suffix_orig = "_speconly"
 
         bayesianpca = jit(
             pcamodel.bayesianpca_speconly, backend="gpu", static_argnums=()
@@ -228,7 +229,7 @@ def main(
 
     else:
 
-        suffix = "_specandphot"
+        suffix_orig = "_specandphot"
 
         bayesianpca = jit(
             pcamodel.bayesianpca_specandphot, backend="gpu", static_argnums=()
@@ -255,42 +256,13 @@ def main(
     i_start = 0
     for i in range(i_start, n_epochs):
 
-        neworder = jax.random.permutation(key, np.arange(numBatches_train))
-        indices_train_reordered = np.take(indices_train, neworder)
-        datapipe.batch = 0  # reset batch number
-        for j in range(numBatches_train):
-            data_batch = datapipe.next_batch(indices_train_reordered, batchsize)
-            the_loss, opt_state = update(
-                next(itercount), opt_state, data_batch, polynomials_spec
-            )
-            # logfml, thetamap, thetastd, specmod_map, photmod_map = bayesianpca(
-            #    params, data_batch, polynomials_spec
-            # )
-            losses_train[i, j] = the_loss.block_until_ready()
-            # will force all outputs of jit fct
-
-            # batch_ells = train_specphotscaling[neworder[si : si + bs]]
-            # update scaling, calculated from spec only
-            # updated_batch_ells[updated_batch_ells < 0] = 1.0
-            # train_specphotscaling[neworder[si : si + bs]] = updated_batch_ells
-
-        loss = onp.mean(losses_train[i, :])
-        pcamodel.set_params(get_params(opt_state))  # get updated parameter array
-        xla._xla_callable.cache_clear()
-
-        print(
-            "> Training loss: %.7e" % loss,
-            " (iteration " + str(i) + ")",
-            end=" - ",
-        )
-        print_elapsed_time(start_time)
-
-        # write model to file!
-        pcamodel.write_model()
-
-        if i > 0 and i % output_valid_zsteps == 0:  #  and i > 0:
+        if i % output_valid_zsteps == 0:  #  and i > 0:
 
             print("> Running validation models and data")
+            if i == 0:
+                suffix = suffix_orig + "_init"
+            else:
+                suffix = suffix_orig
             resultspipe = ResultsPipeline(
                 output_prefix,
                 suffix,
@@ -327,53 +299,54 @@ def main(
                 print("Validation loss is worse than the previous two - early stopping")
                 exit(0)
 
-            zstep = 1
-            print("> Running redshift grids")
-            print(
-                "> should take approximately %dh %dm %ds"
-                % process_time(
-                    valid_start_time,
-                    valid_end_time,
-                    transferfunctions_zgrid[::zstep].size,
-                )
-            )
-            valid_logpz = (
-                onp.zeros((numObj_valid, transferfunctions_zgrid[::zstep].size))
-                + onp.nan
-            )
-            datapipe.batch = 0  # reset batch number
-            for j in range(numBatches_valid):
-                data_batch = datapipe.next_batch(indices_valid, batchsize)
-                si, bs = data_batch[0], data_batch[1]
-
-                print("> batch", j + 1, "out of", numBatches_valid)
-                batch_start_time = time.time()
-
-                for iz, z in enumerate(transferfunctions_zgrid[::zstep]):
-
-                    if iz < 2:
-                        # currently numerically unstable due to batch_transferfunctions.
-                        # will need to investigate why at some point.
-                        continue
-
-                    result = bayesianpca(
-                        pcamodel.get_params(),
-                        datapipe.change_redshift(iz, zstep, data_batch),
-                        polynomials_spec,
+            if compute_redshifts_pdfs:
+                print("> Running redshift grids")
+                zstep = 1
+                print(
+                    "> should take approximately %dh %dm %ds"
+                    % process_time(
+                        valid_start_time,
+                        valid_end_time,
+                        transferfunctions_zgrid[::zstep].size,
                     )
-                    valid_logpz[si : si + bs, iz] = result[0].block_until_ready()
-                    xla._xla_callable.cache_clear()
-
-                print_remaining_time(batch_start_time, 0, j, numBatches_valid)
-
-                onp.save(
-                    output_dir + "/logpz_zgrid" + suffix,
-                    transferfunctions_zgrid[::zstep],
                 )
-                onp.save(
-                    output_dir + "/logpz" + suffix,
-                    valid_logpz[: si + bs, :],
+                valid_logpz = (
+                    onp.zeros((numObj_valid, transferfunctions_zgrid[::zstep].size))
+                    + onp.nan
                 )
+                datapipe.batch = 0  # reset batch number
+                for j in range(numBatches_valid):
+                    data_batch = datapipe.next_batch(indices_valid, batchsize)
+                    si, bs = data_batch[0], data_batch[1]
+
+                    print("> batch", j + 1, "out of", numBatches_valid)
+                    batch_start_time = time.time()
+
+                    for iz, z in enumerate(transferfunctions_zgrid[::zstep]):
+
+                        if iz < 2:
+                            # currently numerically unstable due to batch_transferfunctions.
+                            # will need to investigate why at some point.
+                            continue
+
+                        result = bayesianpca(
+                            pcamodel.get_params(),
+                            datapipe.change_redshift(iz, zstep, data_batch),
+                            polynomials_spec,
+                        )
+                        valid_logpz[si : si + bs, iz] = result[0].block_until_ready()
+                        xla._xla_callable.cache_clear()
+
+                    print_remaining_time(batch_start_time, 0, j, numBatches_valid)
+
+                    onp.save(
+                        output_dir + "/logpz_zgrid" + suffix,
+                        transferfunctions_zgrid[::zstep],
+                    )
+                    onp.save(
+                        output_dir + "/logpz" + suffix,
+                        valid_logpz[: si + bs, :],
+                    )
             print_elapsed_time(start_time)
 
             print("> Back to training")
@@ -381,6 +354,39 @@ def main(
             previous_validation_loss1 = current_validation_loss
 
             onp.save(output_dir + "/valid_losses" + suffix, losses_valid[: i + 1, :])
+
+            neworder = jax.random.permutation(key, np.arange(numBatches_train))
+            indices_train_reordered = np.take(indices_train, neworder)
+            datapipe.batch = 0  # reset batch number
+            for j in range(numBatches_train):
+                data_batch = datapipe.next_batch(indices_train_reordered, batchsize)
+                the_loss, opt_state = update(
+                    next(itercount), opt_state, data_batch, polynomials_spec
+                )
+                # logfml, thetamap, thetastd, specmod_map, photmod_map = bayesianpca(
+                #    params, data_batch, polynomials_spec
+                # )
+                losses_train[i, j] = the_loss.block_until_ready()
+                # will force all outputs of jit fct
+
+                # batch_ells = train_specphotscaling[neworder[si : si + bs]]
+                # update scaling, calculated from spec only
+                # updated_batch_ells[updated_batch_ells < 0] = 1.0
+                # train_specphotscaling[neworder[si : si + bs]] = updated_batch_ells
+
+            loss = onp.mean(losses_train[i, :])
+            pcamodel.set_params(get_params(opt_state))  # get updated parameter array
+            xla._xla_callable.cache_clear()
+
+            print(
+                "> Training loss: %.7e" % loss,
+                " (iteration " + str(i) + ")",
+                end=" - ",
+            )
+            print_elapsed_time(start_time)
+
+            # write model to file!
+            pcamodel.write_model()
 
     print("Learning finished")
 

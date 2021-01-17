@@ -451,8 +451,11 @@ class ResultsPipeline:
             self.photmod = onp.zeros((n_obj, n_pix_phot))
             self.thetamap = onp.zeros((n_obj, n_components))
             self.thetastd = onp.zeros((n_obj, n_components))
+            self.ellfactors = onp.zeros((n_obj,))
 
-    def write_batch(self, data_batch, logfml, thetamap, thetastd, specmod, photmod):
+    def write_batch(
+        self, data_batch, logfml, thetamap, thetastd, specmod, photmod, ellfactors
+    ):
 
         si, bs = data_batch[0], data_batch[1]
         self.logfml[si : si + bs] = logfml
@@ -460,6 +463,7 @@ class ResultsPipeline:
         self.photmod[si : si + bs, :] = photmod
         self.thetamap[si : si + bs, :] = thetamap
         self.thetastd[si : si + bs, :] = thetastd
+        self.ellfactors[si : si + bs] = ellfactors
 
     def load_reconstructions(self):
 
@@ -469,6 +473,7 @@ class ResultsPipeline:
         self.photmod = onp.load(self.prefix + "photmod" + self.suffix + ".npy")
         self.thetamap = onp.load(self.prefix + "thetamap" + self.suffix + ".npy")
         self.thetastd = onp.load(self.prefix + "thetastd" + self.suffix + ".npy")
+        self.ellfactors = onp.load(self.prefix + "ellfactors" + self.suffix + ".npy")
 
     def write_reconstructions(self):
 
@@ -478,6 +483,7 @@ class ResultsPipeline:
         onp.save(self.prefix + "photmod" + self.suffix, self.photmod)
         onp.save(self.prefix + "thetamap" + self.suffix, self.thetamap)
         onp.save(self.prefix + "thetastd" + self.suffix, self.thetastd)
+        onp.save(self.prefix + "ellfactors" + self.suffix, self.ellfactors)
 
 
 def extract_pca_parameters(runroot):

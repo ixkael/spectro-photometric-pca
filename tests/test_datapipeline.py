@@ -117,6 +117,7 @@ def test_results():
     thetastd = jax.random.normal(key, (n_obj_out, n_components))
     specmod = jax.random.normal(key, (n_obj_out, n_pix_spec))
     photmod = jax.random.normal(key, (n_obj_out, n_pix_phot))
+    ellfactors = jax.random.normal(key, (n_obj_out,))
 
     for _ in range(n_batches):
         data_batch = dataPipeline.next_batch(indices, batchsize)
@@ -130,6 +131,8 @@ def test_results():
             thetastd[si : si + bs, :],
             specmod[si : si + bs, :],
             photmod[si : si + bs, :],
+            photmod[si : si + bs, :],
+            ellfactors[si : si + bs],
         )
 
     np.allclose(logfml, resultsPipeline.logfml)
@@ -137,6 +140,7 @@ def test_results():
     np.allclose(photmod, resultsPipeline.photmod)
     np.allclose(thetamap, resultsPipeline.thetamap)
     np.allclose(thetastd, resultsPipeline.thetastd)
+    np.allclose(ellfactors, resultsPipeline.ellfactors)
 
     resultsPipeline.write_reconstructions()
 
@@ -147,6 +151,7 @@ def test_results():
     np.allclose(photmod, resultsPipeline.photmod)
     np.allclose(thetamap, resultsPipeline.thetamap)
     np.allclose(thetastd, resultsPipeline.thetastd)
+    np.allclose(ellfactors, resultsPipeline.ellfactors)
 
     resultsPipeline2 = ResultsPipeline(
         prefix, suffix, n_components, dataPipeline, indices
@@ -159,6 +164,7 @@ def test_results():
     np.allclose(photmod, resultsPipeline2.photmod)
     np.allclose(thetamap, resultsPipeline2.thetamap)
     np.allclose(thetastd, resultsPipeline2.thetastd)
+    np.allclose(ellfactors, resultsPipeline2.ellfactors)
 
 
 def test_filennames():
