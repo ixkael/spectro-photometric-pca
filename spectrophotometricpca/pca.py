@@ -24,19 +24,24 @@ class PriorModel:
 
     def __init__(self, n_components):
         self.n_components = n_components
-        self.params_shape = (self.n_components, 2)
 
     def random(self, key):
-        params = jax.random.normal(key, self.params_shape)
+        params_means = 0 * jax.random.normal(key, (self.n_components, 2)) + 0
+        params_loginvvar = 0 * jax.random.normal(key, (self.n_components, 2)) + 2
+        params = np.hstack([params_means, params_loginvvar])
         return params
 
     @staticmethod
     def get_mean_at_z(params, redshifts):
-        return np.ones((redshifts.size, 1)) * params[None, :, 0]
+        cst = np.ones((redshifts.size, 1)) * params[None, :, 0]
+        slp = redshifts[:, None] * params[None, :, 1]
+        return cst + slp
 
     @staticmethod
     def get_loginvvar_at_z(params, redshifts):
-        return np.ones((redshifts.size, 1)) * params[None, :, 1]
+        cst = np.ones((redshifts.size, 1)) * params[None, :, 2]
+        slp = redshifts[:, None] * params[None, :, 3]
+        return cst + slp
 
 
 @jit
@@ -260,8 +265,8 @@ class PCAModel:
 
         self.pcacomponents = jax.random.normal(key, (n_components, lamgridsize))
         self.components_prior_params = self.pcacomponents_prior.random(key)
-        self.polynomials_prior_mean = jax.random.normal(key, (n_poly,))
-        self.polynomials_prior_loginvvar = jax.random.normal(key, (n_poly,))
+        self.polynomials_prior_mean = 1e-2 * jax.random.normal(key, (n_poly,))
+        self.polynomials_prior_loginvvar = 1e-2 * jax.random.normal(key, (n_poly,))
 
         return self.pcacomponents_prior
 
