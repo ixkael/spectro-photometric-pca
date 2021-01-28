@@ -259,11 +259,11 @@ class PCAModel:
             self.prefix + "polynomials_prior_loginvvar" + self.suffix + ".npy",
         )
 
-    def init_params(self, key, n_components, n_poly, lamgridsize):
+    def init_params(self, key, n_components, n_poly, n_pix_sed):
 
         self.pcacomponents_prior = PriorModel(n_components)
 
-        self.pcacomponents = jax.random.normal(key, (n_components, lamgridsize))
+        self.pcacomponents = jax.random.normal(key, (n_components, n_pix_sed))
         self.components_prior_params = self.pcacomponents_prior.random(key)
         self.polynomials_prior_mean = 1e-2 * jax.random.normal(key, (n_poly,))
         self.polynomials_prior_loginvvar = 1e-2 * jax.random.normal(key, (n_poly,))
