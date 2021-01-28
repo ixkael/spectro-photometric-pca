@@ -60,10 +60,10 @@ def test_bayesianpca_spec_and_specandphot():
     indices = dataPipeline.indices
     data_batch = dataPipeline.next_batch(indices, batchsize)
 
-    result_speconly = pcamodel.bayesianpca_speconly(
+    result_speconly = bayesianpca_speconly(
         params_speconly, data_batch, polynomials_spec
     )
-    result_specandphot = pcamodel.bayesianpca_specandphot(
+    result_specandphot = bayesianpca_specandphot(
         params_specandphot, data_batch, polynomials_spec
     )
 
@@ -83,9 +83,9 @@ def test_bayesianpca_spec_and_specandphot():
     @partial(jit, static_argnums=())
     def loss_spec_and_specandphot(params_all, data_batch, polynomials_spec):
         [params_speconly, params_specandphot] = params_all
-        return pcamodel.loss_speconly(
+        return loss_speconly(
             params_speconly, data_batch, polynomials_spec
-        ) + pcamodel.loss_specandphot(params_specandphot, data_batch, polynomials_spec)
+        ) + loss_specandphot(params_specandphot, data_batch, polynomials_spec)
 
     loss_value = loss_spec_and_specandphot(params_all, data_batch, polynomials_spec)
     assert np.all(np.isfinite(loss_value))
