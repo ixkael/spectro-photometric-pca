@@ -136,7 +136,7 @@ def test_batch_indices():
 
     for i in range(n_obj):
         off = batch_index_wave[i]
-        assert np.all(
-            pcacomponents_speconly_atz[i, :, :]
-            == pcacomponents_speconly[:, off : off + n_pix_spec]
+        assert np.allclose(
+            pcacomponents_speconly_atz[i, :, :],
+            pcacomponents_speconly[:, off : off + n_pix_spec],
         )
