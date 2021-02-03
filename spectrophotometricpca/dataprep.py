@@ -172,13 +172,25 @@ def make_bounds_from_centers(xcenters):
 
 def build_sdss_grids(zmax):
 
+    # No real need to split the wavelength grid.
+    # What matters is that
+    # 1. the steps are uniform throughout (for stepped redshifting to work)
+    # 2. the steps in redshift correspond to steps in wavelength
+    # 3. the wavelength and redshift ranges are sufficient to cover the data of interest.
+
+    step = 0.0001 * 0.98
+    # critical for gridsize to be uniform throughout whole grid, .
     logwave_min = 3.55 - np.log10(1 + zmax)
-    logwavegrid_z = np.arange(logwave_min, 3.55, 0.0001)
-    logwavegrid_ext = np.arange(3.55, 4.02, 0.0001)
+    logwavegrid_z = np.arange(3.55, logwave_min, -step)[::-1]
+    logwavegrid_ext = np.arange(3.55, 4.03, step)[1:]
     lamspec_waveoffset = logwavegrid_z.size
     logwavegrid = np.concatenate([logwavegrid_z, logwavegrid_ext])
 
+    print("Size of redshift grid:", logwavegrid_z.size)
+    print("Size of wavelength grid:", logwavegrid.size)
+
     return logwavegrid, logwavegrid_z, lamspec_waveoffset
+
 
 
 def loop(
@@ -187,7 +199,7 @@ def loop(
     root_specdata,
     new_logwave_rest_centers,
     logwavegrid_z,
-    length_cap=4700,
+    length_cap=4800,
     correct_for_extinction=True,
     verbose_step=1000,
     min_valid_pixels=20,
@@ -197,6 +209,9 @@ def loop(
 
     new_logwave_rest_bounds = make_bounds_from_centers(new_logwave_rest_centers)
 
+    processed_logwave_obs = np.zeros((indices.size, length_cap), dtype=np.float32)
+    processed_logwave_obs_start = np.zeros((indices.size,), dtype=np.float32)
+    processed_logwave_obs_end = np.zeros((indices.size,), dtype=np.float32)
     processed_redshifts = np.zeros((indices.size,), dtype=np.float32)
     processed_indices = np.zeros((indices.size,), dtype=np.int32)
     processed_index_transfer_redshift = np.zeros((indices.size,), dtype=np.int32)
@@ -204,8 +219,8 @@ def loop(
     processed_n_valid_pixels = np.zeros((indices.size,), dtype=np.int32)
     processed_index_wave = np.zeros((indices.size,), dtype=np.int32)
     processed_spec = np.zeros((indices.size, length_cap), dtype=np.float32) + np.nan
+    processed_spec_off = np.zeros_like(processed_spec) + np.nan
     processed_spec_ivar = np.zeros_like(processed_spec)
-    processed_spec_off = np.zeros_like(processed_spec)
 
     offset = 0
     t1 = time()
@@ -229,33 +244,95 @@ def loop(
             ebv = 0
 
         logwave_obs, spec, spec_ivar, spec_off = extract_spec(data, ebv=ebv)
+        logwave_obs_rest = logwave_obs - np.log10(1 + redshift)
 
-        x_new_indices, index_transfer_redshift = rebin_nearest_indices(
-            new_logwave_rest_bounds,
-            redshift,
-            transfer_redshift_grid,
-            logwave_obs,
-            length_cap=length_cap,
-        )
+        assert logwave_obs_rest[-1] < new_logwave_rest_centers[-1]
 
-        processed_n_valid_pixels_orig[offset] = np.sum(~spec_ivar.mask)
-        processed_n_valid_pixels[offset] = np.sum(~spec_ivar[x_new_indices].mask)
+        # Masking sky lines
+        ind = np.logical_and(logwave_obs >= np.log10(6860), logwave_obs <= np.log10(6920))
+        ind |= np.logical_and(logwave_obs >= np.log10(7150), logwave_obs <= np.log10(7340))
+        ind |= np.logical_and(logwave_obs >= np.log10(7575), logwave_obs <= np.log10(7725))
+        spec_ivar[ind] = 0
+        spec[ind] = np.nan
+
+        #
+        diff_log = np.log10(1 + transfer_redshift_grid) - np.log10(1 + redshift)
+        index_transfer_redshift = np.argmin(diff_log ** 2.0)
+        redshift_ongrid = transfer_redshift_grid[index_transfer_redshift]
+        #index_wave = transfer_redshift_grid.size - index_transfer_redshift
+
+        def interpolate(x_target, x_input, test=True):
+            x_target_bounds = make_bounds_from_centers(x_target)
+            indices = np.searchsorted(
+                x_target_bounds, x_input
+            )
+            indices -= 1
+            if test:
+                assert np.all(x_input >= x_target[0])
+                assert np.all(x_input < x_target[-1])
+                for i, x in zip(indices, x_input):
+                    i2 = np.argmin((x_target-x)**2)
+                    if i != i2:
+                        print(i, i2)
+                        print(x_target[i], x_target[i2])
+                        print(x_target_bounds[i], x, x_target_bounds[i+1])
+                    assert i == i2
+            return indices
+
+        abs_new_indices = interpolate(new_logwave_rest_centers, logwave_obs_rest, test=False)
+        diff_log = logwave_obs_rest[0] - new_logwave_rest_centers
+        index_wave2 = np.argmin(diff_log ** 2.0)
+        index_wave = abs_new_indices[0]
+        assert index_wave == index_wave2
+        #print(logwave_obs_rest[0], new_logwave_rest_centers[index_wave], new_logwave_rest_centers[index_wave2])
+        #print(new_logwave_rest_centers[index_wave-1], new_logwave_rest_centers[index_wave], new_logwave_rest_centers[index_wave+1])
+        #print(index_wave2 - index_wave, end=" ")
+        #assert index_wave2 == index_wave
+
+        rel_new_indices = abs_new_indices - index_wave
+        if np.any(rel_new_indices < 0) or np.any(rel_new_indices >= length_cap):
+            print(redshift, index_wave, np.min(rel_new_indices), np.max(rel_new_indices))
+            print(logwave_obs[0], logwave_obs.size)
+            stop
+        assert np.all(rel_new_indices >= 0)
+        assert np.all(rel_new_indices < length_cap)
+
+        # any pixels outside of range?
+        unique, counts = np.unique(abs_new_indices, return_counts=True)
+
+        if np.any(counts > 1):
+            print(idx, redshift)
+            print('val', unique[counts > 1][0])
+            ind = abs_new_indices == unique[counts > 1][0]
+            #print(logwave_obs[ind])
+            #print(logwave_obs_rest[ind])
+            v = unique[counts > 1][0]
+            #print(new_logwave_rest_centers[v-1], new_logwave_rest_centers[v], new_logwave_rest_centers[v+1])
+            #print(np.diff(logwave_obs[ind]))
+            print(np.sum(counts - 1), end=" ")
+        assert np.all(counts <= 1)
+
+        ind = spec_ivar != 0
+        ind &= np.isfinite(spec_ivar)
+        processed_n_valid_pixels_orig[offset] = np.sum(ind)#np.sum(~spec_ivar.mask)
+        processed_n_valid_pixels[offset] = np.sum(ind)#np.sum(~spec_ivar.mask)
 
         if processed_n_valid_pixels[offset] < min_valid_pixels:
-            # print("Skipping", idx)
+            #print("Skipping", idx)
             continue
 
+        processed_logwave_obs_start[offset] = logwave_obs[0]
+        processed_logwave_obs_end[offset] = logwave_obs[-1]
+        processed_logwave_obs[offset, :][rel_new_indices] = logwave_obs
         processed_indices[offset] = idx
 
-        processed_spec[offset, 0 : x_new_indices.size] = spec[x_new_indices]
-        processed_spec_ivar[offset, 0 : x_new_indices.size] = spec_ivar[x_new_indices]
-        processed_spec_off[offset, 0 : x_new_indices.size] = spec_off[x_new_indices]
+        processed_spec[offset, :][rel_new_indices] = spec
+        processed_spec_ivar[offset, :][rel_new_indices] = spec_ivar
+        processed_spec_off[offset, :][rel_new_indices] = spec_off
 
         processed_redshifts[offset] = redshift
         processed_index_transfer_redshift[offset] = index_transfer_redshift
-        processed_index_wave[offset] = (
-            transfer_redshift_grid.size - index_transfer_redshift
-        )
+        processed_index_wave[offset] = index_wave
 
         offset += 1
 
@@ -286,6 +363,9 @@ def loop(
     return (
         transfer_redshift_grid,
         processed_indices[:offset],
+        processed_logwave_obs[:offset, :],
+        processed_logwave_obs_start[:offset],
+        processed_logwave_obs_end[:offset],
         processed_redshifts[:offset],
         processed_spec[:offset, :],
         processed_spec_ivar[:offset, :],
@@ -298,6 +378,7 @@ def loop(
     )
 
 
+
 def rebin_nearest_indices(
     new_logwave_rest_bounds,
     redshift,
@@ -308,15 +389,17 @@ def rebin_nearest_indices(
 
     object_logwave_rest = logwave_obs_middle - np.log10(1 + redshift)
 
+    # positions of data in new pixels
     x_new_indices = np.searchsorted(
         logwave_obs_middle, new_logwave_rest_bounds, side="right"
     )
 
     # exclude redundant values at beginning or end:
-    correct = np.logical_and(
-        x_new_indices != x_new_indices[0], x_new_indices != x_new_indices[-1]
-    )
-    x_new_indices = x_new_indices[correct]
+    # correct = np.logical_and(
+    #    x_new_indices != x_new_indices[0], x_new_indices != x_new_indices[-1]
+    # )
+    # x_new_indices = x_new_indices[correct]
+
     if length_cap is not None:
         x_new_indices = x_new_indices[0:length_cap]
 
@@ -326,19 +409,30 @@ def rebin_nearest_indices(
     return x_new_indices, index_transfer_redshift
 
 
+
 def extract_spec(data, ebv=0, RV=3.1):
 
-    mask = data["AND_MASK"] > 0
-    logwave_obs = np.ma.masked_array(data["LOGLAM"].astype(float), mask=mask)
-    spec = np.ma.masked_array(data["FLUX"].astype(float), mask=mask)
-    spec_off = np.ma.masked_array(data["MODEL"].astype(float), mask=mask)
-    spec_ivar = np.ma.masked_array(data["IVAR"].astype(float), mask=mask)
+    mask = data["AND_MASK"].data > 0
+    logwave_obs = data["LOGLAM"].astype(float).data
+    spec = data["FLUX"].astype(float).data
+    spec[mask] = np.nan
+    spec_ivar = data["IVAR"].astype(float).data
+    spec_ivar[mask] = np.nan
+    spec_off = data["MODEL"].astype(float).data
+    #spec = np.ma.masked_array(data["FLUX"].astype(float).data, mask=mask)
+    #spec_off = np.ma.masked_array(data["MODEL"].astype(float).data, mask=mask)
+    #spec_ivar = np.ma.masked_array(data["IVAR"].astype(float).data, mask=mask)
 
     if ebv > 0:
         extinction_sed = ebv * extinction.ccm89(10 ** logwave_obs, 1.0, RV, unit="aa")
         spec = extinction.remove(extinction_sed, spec)
         spec_off = extinction.remove(extinction_sed, spec_off)
         spec_ivar = extinction.apply(extinction_sed, spec_ivar)
+
+    #ind = np.isfinite(logwave_obs)
+    #ind &= np.isfinite(spec)
+    #ind &= np.isfinite(spec_ivar)
+    #ind &= np.isfinite(spec_off)
 
     return logwave_obs, spec, spec_ivar, spec_off
 
