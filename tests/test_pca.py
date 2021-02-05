@@ -61,10 +61,10 @@ def test_bayesianpca_spec_and_specandphot():
     data_batch = dataPipeline.next_batch(indices, batchsize)
 
     result_speconly = bayesianpca_speconly(
-        params_speconly, data_batch, polynomials_spec
+        params_speconly, data_batch, polynomials_spec, n_components, n_pix_spec
     )
     result_specandphot = bayesianpca_specandphot(
-        params_specandphot, data_batch, polynomials_spec
+        params_specandphot, data_batch, polynomials_spec, n_components, n_pix_spec
     )
 
     for x in result_speconly + result_specandphot:
@@ -80,24 +80,30 @@ def test_bayesianpca_spec_and_specandphot():
 
     params_all = [params_speconly, params_specandphot]
 
-    @partial(jit, static_argnums=())
-    def loss_spec_and_specandphot(params_all, data_batch, polynomials_spec):
+    @partial(jit, static_argnums=(3, 4))
+    def loss_spec_and_specandphot(
+        params_all, data_batch, polynomials_spec, n_components, n_pix_spec
+    ):
         [params_speconly, params_specandphot] = params_all
         return loss_speconly(
-            params_speconly, data_batch, polynomials_spec
-        ) + loss_specandphot(params_specandphot, data_batch, polynomials_spec)
+            params_speconly, data_batch, polynomials_spec, n_components, n_pix_spec
+        ) + loss_specandphot(
+            params_specandphot, data_batch, polynomials_spec, n_components, n_pix_spec
+        )
 
-    loss_value = loss_spec_and_specandphot(params_all, data_batch, polynomials_spec)
+    loss_value = loss_spec_and_specandphot(
+        params_all, data_batch, polynomials_spec, n_components, n_pix_spec
+    )
     assert np.all(np.isfinite(loss_value))
 
     opt_init, opt_update, get_params = jax.experimental.optimizers.adam(1e-3)
     opt_state = opt_init(params_all)
 
-    @partial(jit, static_argnums=())
-    def update(step, opt_state, data_batch, data_aux):
+    @partial(jit, static_argnums=(4, 5))
+    def update(step, opt_state, data_batch, polynomials_spec, n_components, n_pix_spec):
         params = get_params(opt_state)
         value, grads = jax.value_and_grad(loss_spec_and_specandphot)(
-            params, data_batch, data_aux
+            params, data_batch, polynomials_spec, n_components, n_pix_spec
         )
         opt_state = opt_update(step, grads, opt_state)
         return value, opt_state
@@ -112,7 +118,12 @@ def test_bayesianpca_spec_and_specandphot():
         for j in range(nbatches):
             data_batch = dataPipeline.next_batch(train_indices_reordered, batchsize)
             loss, opt_state = update(
-                next(itercount), opt_state, data_batch, polynomials_spec
+                next(itercount),
+                opt_state,
+                data_batch,
+                polynomials_spec,
+                n_components,
+                n_pix_spec,
             )
             assert np.all(np.isfinite(loss))
 

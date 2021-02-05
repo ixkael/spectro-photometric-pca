@@ -27,7 +27,7 @@ class PriorModel:
 
     def random(self, key):
         params_means = 0 * jax.random.normal(key, (self.n_components, 2)) + 0
-        params_loginvvar = 0 * jax.random.normal(key, (self.n_components, 2)) + 2
+        params_loginvvar = 0 * jax.random.normal(key, (self.n_components, 2)) - 4
         params = np.hstack([params_means, params_loginvvar])
         return params
 
@@ -180,39 +180,46 @@ def bayesianpca_specandphot_explicit(
     return (logfml, thetamap, thetastd, specmod_map, photmod_map)
 
 
-@partial(jit, static_argnums=())
 def loss_speconly(
     params,
     data_batch,
     polynomials_spec,
+    n_components,
+    n_pix_spec,
 ):
     (logfml_speconly, _, _, _, _, _) = bayesianpca_speconly(
         params,
         data_batch,
         polynomials_spec,
+        n_components,
+        n_pix_spec,
     )
     return -np.sum(logfml_speconly)
 
 
-@partial(jit, static_argnums=())
 def loss_specandphot(
     params,
     data_batch,
     polynomials_spec,
+    n_components,
+    n_pix_spec,
 ):
     (logfml_specandphot, _, _, _, _, _) = bayesianpca_specandphot(
         params,
         data_batch,
         polynomials_spec,
+        n_components,
+        n_pix_spec,
     )
     return -np.sum(logfml_specandphot)
 
 
-@partial(jit, static_argnums=())
 def bayesianpca_speconly(
     params,
     data_batch,
     polynomials_spec,
+    n_components,
+    n_pix_spec,
 ):
     (
         pcacomponents_speconly,
@@ -242,8 +249,6 @@ def bayesianpca_speconly(
     # ones = np.ones((bs, 1))
     # batch_index_wave = np.zeros((bs,), int)
 
-    n_components = pcacomponents_speconly.shape[0]
-    n_pix_spec = spec.shape[1]
     indices_0, indices_1 = batch_indices(batch_index_wave, n_components, n_pix_spec)
 
     pcacomponents_speconly_atz = pcacomponents_speconly[indices_0, indices_1]
@@ -292,11 +297,12 @@ def bayesianpca_speconly(
     )
 
 
-@partial(jit, static_argnums=())
 def bayesianpca_specandphot(
     params,
     data_batch,
     polynomials_spec,
+    n_components,
+    n_pix_spec,
 ):
     (
         pcacomponents_specandphot,
@@ -323,8 +329,6 @@ def bayesianpca_specandphot(
         batch_index_wave_ext,
     ) = data_batch
 
-    n_components = pcacomponents_specandphot.shape[0]
-    n_pix_spec = spec.shape[1]
     indices_0, indices_1 = batch_indices(batch_index_wave, n_components, n_pix_spec)
     pcacomponents_specandphot_atz = pcacomponents_specandphot[indices_0, indices_1]
     components_phot_specandphot = np.sum(
@@ -392,7 +396,6 @@ def bayesianpca_specandphot(
     )
 
 
-@partial(jit, static_argnums=(1, 2))
 def batch_indices(start_indices, n_components, npix):
     nobj = start_indices.shape[0]
 
@@ -443,28 +446,39 @@ class PCAModel:
             self.prefix + "polynomials_prior_loginvvar" + self.suffix + ".npy",
         )
 
-    def init_params(self, key, n_components, n_poly, n_pix_sed):
+    def init_params(
+        self, key, n_components, n_poly, n_pix_sed, opt_basis=True, opt_priors=True
+    ):
 
         self.pcacomponents_prior = PriorModel(n_components)
 
+        self.opt_basis, self.opt_priors = opt_basis, opt_priors
+
         self.pcacomponents = jax.random.normal(key, (n_components, n_pix_sed))
         self.components_prior_params = self.pcacomponents_prior.random(key)
-        self.polynomials_prior_mean = 1e-2 * jax.random.normal(key, (n_poly,))
-        self.polynomials_prior_loginvvar = 1e-2 * jax.random.normal(key, (n_poly,))
+        self.polynomials_prior_mean = 0 * jax.random.normal(key, (n_poly,)) + 0
+        self.polynomials_prior_loginvvar = 0 * jax.random.normal(key, (n_poly,)) - 4
 
         return self.pcacomponents_prior
 
     def get_params(self):
-        arr = [
-            self.pcacomponents,
-            self.components_prior_params,
-            self.polynomials_prior_mean,
-            self.polynomials_prior_loginvvar,
-        ]
+        arr = []
+        if self.opt_basis:
+            arr = [self.pcacomponents]
+        if self.opt_priors:
+            arr += [
+                self.components_prior_params,
+                self.polynomials_prior_mean,
+                self.polynomials_prior_loginvvar,
+            ]
         return arr
 
     def set_params(self, params):
-        self.pcacomponents = params[0]
-        self.components_prior_params = params[1]
-        self.polynomials_prior_mean = params[2]
-        self.polynomials_prior_loginvvar = params[3]
+        off = 0
+        if self.opt_basis:
+            self.pcacomponents = params[off]
+            off += 1
+        if self.opt_priors:
+            self.components_prior_params = params[off]
+            self.polynomials_prior_mean = params[off + 1]
+            self.polynomials_prior_loginvvar = params[off + 2]

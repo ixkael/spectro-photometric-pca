@@ -131,7 +131,6 @@ def test_results():
             thetastd[si : si + bs, :],
             specmod[si : si + bs, :],
             photmod[si : si + bs, :],
-            photmod[si : si + bs, :],
             ellfactors[si : si + bs],
         )
 
@@ -168,13 +167,24 @@ def test_results():
 
 
 def test_filennames():
+    opt_basis, opt_priors = 0, 1
     n_components, n_poly, batchsize, subsampling, learningrate = 3, 3, 13, 1, 1e-3
-    prefix = pca_file_prefix(n_components, n_poly, batchsize, subsampling, learningrate)
+    prefix = pca_file_prefix(
+        n_components,
+        n_poly,
+        batchsize,
+        subsampling,
+        opt_basis,
+        opt_priors,
+        learningrate,
+    )
     (
         n_components2,
         n_poly2,
         batchsize2,
         subsampling2,
+        opt_basis2,
+        opt_priors2,
         learningrate2,
     ) = extract_pca_parameters(prefix)
     assert n_components == n_components2
@@ -182,6 +192,8 @@ def test_filennames():
     assert learningrate == learningrate2
     assert batchsize == batchsize2
     assert subsampling == subsampling2
+    assert opt_basis == opt_basis2
+    assert opt_priors == opt_priors2
 
 
 def test_load_fits_templates():

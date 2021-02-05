@@ -203,7 +203,7 @@ class DataPipeline:
         input_dir="./",
         subsampling=1,
         npix_min=1,
-        lambda_start=8e2,
+        lambda_start=None,
         write_subset=False,
         use_subset=False,
     ):
@@ -251,18 +251,13 @@ class DataPipeline:
 
         # Masking sky lines
         lamsize_spec = self.spec.shape[1]
-        lamgrid_spec = self.lamgrid[
-            np.arange(self.lamspec_waveoffset, self.lamspec_waveoffset + lamsize_spec)
-        ]
-        ind = np.logical_and(lamgrid_spec >= 6860, lamgrid_spec <= 6920)
-        ind |= np.logical_and(lamgrid_spec >= 7150, lamgrid_spec <= 7340)
-        ind |= np.logical_and(lamgrid_spec >= 7575, lamgrid_spec <= 7725)
         print(
-            "Number of pixels masked due to skylines:", np.sum(ind), "out of", ind.size
+            "lamspec_waveoffset",
+            self.lamspec_waveoffset,
+            self.lamgrid[self.lamspec_waveoffset],
         )
-        ind = np.where(ind)[0]
-        self.spec[:, ind] = 0.0
-        self.spec_invvar[:, ind] = 0.0
+        print("lamsize_spec", lamsize_spec)
+        print("lamgrid", self.lamgrid.size)
 
         # Floor spectroscopic errors
         ind = self.spec_invvar ** -0.5 < 1e-3 * np.abs(self.spec)
@@ -299,9 +294,9 @@ class DataPipeline:
         n_pix_sed = self.lamgrid.size
         n_pix_spec = self.spec.shape[1]
         n_pix_phot = self.phot.shape[1]
-        lamgrid_spec = self.lamgrid[
-            self.lamspec_waveoffset : self.lamspec_waveoffset + n_pix_spec
-        ]
+        # lamgrid_spec = self.lamgrid[
+        #    self.lamspec_waveoffset : self.lamspec_waveoffset + n_pix_spec
+        # ]
         return (
             self.lamgrid,
             self.lam_phot_eff,
@@ -311,13 +306,13 @@ class DataPipeline:
             n_pix_sed,
             n_pix_spec,
             n_pix_phot,
-            lamgrid_spec,
         )
 
     def next_batch(self, indices, batchsize):
         length = indices.size
         startindex = self.batch * batchsize
         batch_indices = indices[startindex : startindex + batchsize]
+        # print('batch_indices', batch_indices.size, batch_indices[0], batch_indices[-1])
         batch_index_wave = np.take(self.index_wave, batch_indices)
         batch_index_transfer_redshift = np.take(
             self.index_transfer_redshift, batch_indices
@@ -407,8 +402,9 @@ class DataPipeline:
         batch_transferfunctions = self.transferfunctions[
             None, iz * zstep, :, :
         ] * onp.ones((bs, 1, 1))
-
-        batch_index_wave = np.repeat(self.lamspec_waveoffset - iz * zstep, bs)
+        # batch_index_wave = np.repeat(self.lamspec_waveoffset - iz * zstep, bs) # not correct with new arrays
+        batch_index_wave_z0 = batch_index_wave + batch_index_transfer_redshift
+        batch_index_wave = batch_index_wave_z0 - iz * zstep
         batch_index_wave_ext = batch_index_wave[:, None] + onp.arange(spec.shape[1])
         # batch_index_wave_ext[batch_index_wave_ext < 0] = 0 # TODO: is this a problem?
 
@@ -491,19 +487,33 @@ def extract_pca_parameters(runroot):
     last = runroot.split("/")[-1]
     vals = onp.array(last.split("_")[1::2])
     print(vals)
-    n_components, n_poly, batchsize, subsampling = vals[[0, 1, 2, 3]].astype(int)
+    n_components, n_poly, batchsize, subsampling, opt_basis, opt_priors = vals[
+        [0, 1, 2, 3, 4, 5]
+    ].astype(int)
     learningrate = vals[-1].astype(float)
 
-    return n_components, n_poly, batchsize, subsampling, learningrate
+    return (
+        n_components,
+        n_poly,
+        batchsize,
+        subsampling,
+        opt_basis,
+        opt_priors,
+        learningrate,
+    )
 
 
-def pca_file_prefix(n_components, n_poly, batchsize, subsampling, learningrate):
+def pca_file_prefix(
+    n_components, n_poly, batchsize, subsampling, opt_basis, opt_priors, learningrate
+):
 
     prefix = "pca_"
     prefix += str(n_components) + "_components_"
     prefix += str(n_poly) + "_poly_"
     prefix += str(batchsize) + "_batchsize_"
     prefix += str(subsampling) + "_subsampling_"
+    prefix += str(int(opt_basis)) + "_optbasis_"
+    prefix += str(int(opt_priors)) + "_optpriors_"
     prefix += str(learningrate) + "_learningrate"
 
     return prefix
@@ -513,14 +523,30 @@ def load_fits_templates(
     xnew,
     num_components,
     directory="data/",
-    file="rrtemplate-galaxy.fits",
+    bounds_error=False,
+    files=["rrtemplate-galaxy.fits", "rrtemplate-qso.fits"],
 ):
     os.environ["RR_TEMPLATE_DIR"] = directory
-    temp = Template(filename=file)
+
     y_interp = onp.zeros((num_components, xnew.size))
-    for i in range(num_components):
-        x, y = temp.wave, temp.flux[i, :]
-        y_interp[i, :] = scipy.interpolate.interp1d(
-            x, y, kind="nearest", bounds_error=False, fill_value=0, assume_sorted=True
-        )(xnew)
+    off = 0
+    print("Target bounds:", np.min(xnew), np.max(xnew))
+    for file in files:
+        temp = Template(filename=file)
+        print("Loaded file:", file)
+        print("Number of available templates:", temp.flux.shape[0])
+        print("Bounds:", np.min(temp.wave), np.max(temp.wave))
+        for i in range(temp.flux.shape[0]):
+            if off >= num_components:
+                break
+            y_interp[off, :] = scipy.interpolate.interp1d(
+                temp.wave,
+                temp.flux[i, :],
+                kind="linear",
+                bounds_error=bounds_error,
+                fill_value=0,
+                assume_sorted=True,
+            )(xnew)
+            off += 1
+
     return y_interp
