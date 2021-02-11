@@ -72,21 +72,21 @@ from utils import *
 )
 @click.option(
     "--n_epochs",
-    default=2,
+    default=300,
     show_default=True,
     type=int,
     help="Number of epochs",
 )
 @click.option(
     "--batchsize",
-    default=1024,  # 4096 * 8,
+    default=4096 * 1,  # * 2 or 8,
     show_default=True,
     type=int,
     help="Batch size for training",
 )
 @click.option(
     "--n_components",
-    default=8,
+    default=14,
     show_default=True,
     type=int,
     help="Number of PCA components",
@@ -100,14 +100,14 @@ from utils import *
 )
 @click.option(
     "--learningrate",
-    default=1e-2,
+    default=1e-3,
     show_default=True,
     type=float,
     help="Learning rate for optimisation",
 )
 @click.option(
     "--n_poly",
-    default=3,
+    default=2,
     show_default=True,
     type=int,
     help="Number of chebychev polynomials for spectroscopic systematics",
@@ -120,11 +120,18 @@ from utils import *
     help="Only using spectroscopy, as opposed to both photometry and spectroscopy",
 )
 @click.option(
-    "--template_file",
-    default="data/rrtemplate-galaxy.fits",
+    "--opt_basis",
+    default=False,
     show_default=True,
-    type=click.Path(exists=True),
-    help="File for initial PCA",
+    type=bool,
+    help="Optimize basis functions",
+)
+@click.option(
+    "--opt_priors",
+    default=True,
+    show_default=True,
+    type=bool,
+    help="Optimize priors",
 )
 # flag.DEFINE_boolean("load", False, "Loading existing model")
 # flag.DEFINE_integer("alldata", 0, "")
@@ -140,17 +147,27 @@ def main(
     learningrate,
     n_poly,
     speconly,
-    template_file,
+    opt_basis,
+    opt_priors,
 ):
     output_valid_zsteps = n_epochs - 1
+    compute_redshifts_pdfs = True
+    early_stopping = False
     use_subset = False
-    compute_redshifts_pdfs = False
     write_subset = False
 
     output_dir = results_dir + "/" + dataname + "/"
-    output_dir += pca_file_prefix(
-        n_components, n_poly, batchsize, subsampling, learningrate
+    the_prefix = pca_file_prefix(
+        n_components,
+        n_poly,
+        batchsize,
+        subsampling,
+        opt_basis,
+        opt_priors,
+        learningrate,
     )
+    print(the_prefix)
+    output_dir += the_prefix
     output_dir += "/"
     output_prefix = output_dir + ""
 
@@ -193,57 +210,75 @@ def main(
         n_pix_sed,
         n_pix_spec,
         numBands,
-        lamgrid_spec,
     ) = datapipe.get_grids()
 
     # output chi2s of SDSS models
     # np.save(prefix + "valid_chi2s_sdss", self.chi2s_sdss[datapipe.ind_valid_orig])
 
     # parameters:  creating the priors, functions of redshift
-    # Initial valuesn_components, n_poly, lamgridsize
+    # Initial valuesn_components, n_poly, n_pix_sed
     polynomials_spec = chebychevPolynomials(n_poly, n_pix_spec)
 
     pcamodel = PCAModel(polynomials_spec, output_prefix, "")
-    pcacomponents_prior = pcamodel.init_params(key, n_components, n_poly, n_pix_sed)
-
-    # Load PCA templates
-    pcamodel.pcacomponents = load_fits_templates(
-        lamgrid, n_components, file=template_file
+    pcacomponents_prior = pcamodel.init_params(
+        key, n_components, n_poly, n_pix_sed, opt_basis, opt_priors
     )
 
+    # Load PCA templates
+    pcamodel.pcacomponents = load_fits_templates(lamgrid, n_components)
+
+    print("n_components, n_pix_spec", n_components, n_pix_spec)
+
     # Initialise optimiser, as well as update operation.
-    opt_init, opt_update, get_params = jax.experimental.optimizers.adam(learningrate)
-    opt_state = opt_init(pcamodel.get_params())
+    opt_init, opt_update, get_params_opt = jax.experimental.optimizers.adam(
+        learningrate
+    )
+    opt_state = opt_init(pcamodel.get_params_opt())
 
     if speconly:
-
         suffix_orig = "_speconly"
-
         bayesianpca = jit(
-            pcamodel.bayesianpca_speconly, backend="gpu", static_argnums=()
+            bayesianpca_speconly, backend="gpu", static_argnums=(3, 4, 5, 6)
         )
-
-        @partial(jit, static_argnums=(), backend="gpu")
-        def loss_fn(params, data_batch, polynomials_spec):
-            return pcamodel.loss_speconly(params, data_batch, polynomials_spec)
-
+        loss_fn = jit(loss_speconly, backend="gpu", static_argnums=(3, 4, 5, 6))
     else:
-
         suffix_orig = "_specandphot"
-
         bayesianpca = jit(
-            pcamodel.bayesianpca_specandphot, backend="gpu", static_argnums=()
+            bayesianpca_specandphot, backend="gpu", static_argnums=(3, 4, 5, 6)
         )
+        loss_fn = jit(loss_specandphot, backend="gpu", static_argnums=(3, 4, 5, 6))
 
-        @partial(jit, static_argnums=(), backend="gpu")
-        def loss_fn(params, data_batch, polynomials_spec):
-            return pcamodel.loss_specandphot(params, data_batch, polynomials_spec)
+    if opt_basis and opt_priors:
+        data_aux = polynomials_spec
+    if opt_basis and not opt_priors:
+        priors = pcamodel.get_params_nonopt()
+        data_aux = (priors, polynomials_spec)
+    if not opt_basis and opt_priors:
+        components = pcamodel.get_params_nonopt()[0]
+        data_aux = (components, polynomials_spec)
 
-    @partial(jit, static_argnums=(), backend="gpu")
-    def update(zstep, opt_state, data_batch, data_aux):
-        params = get_params(opt_state)
-        value, grads = jax.value_and_grad(loss_fn)(params, data_batch, data_aux)
-        opt_state = opt_update(zstep, grads, opt_state)
+    @partial(jit, backend="gpu", static_argnums=(4, 5, 6, 7))
+    def update(
+        step,
+        opt_state,
+        data_batch,
+        data_aux,
+        n_components,
+        n_pix_spec,
+        opt_basis,
+        opt_priors,
+    ):
+        params = get_params_opt(opt_state)
+        value, grads = jax.value_and_grad(loss_fn)(
+            params,
+            data_batch,
+            data_aux,
+            n_components,
+            n_pix_spec,
+            opt_basis,
+            opt_priors,
+        )
+        opt_state = opt_update(step, grads, opt_state)
         return value, opt_state
 
     # Start loop
@@ -256,7 +291,7 @@ def main(
     i_start = 0
     for i in range(i_start, n_epochs):
 
-        if i % output_valid_zsteps == 0:  #  and i > 0:
+        if i % output_valid_zsteps == 0 and i > 0:
 
             print("> Running validation models and data")
             if i == 0:
@@ -277,7 +312,13 @@ def main(
                 data_batch = datapipe.next_batch(indices_valid, batchsize)
 
                 result = bayesianpca(
-                    pcamodel.get_params(), data_batch, polynomials_spec
+                    pcamodel.get_params_opt(),
+                    data_batch,
+                    data_aux,
+                    n_components,
+                    n_pix_spec,
+                    opt_basis,
+                    opt_priors,
                 )
                 losses_valid[i, j] = -np.sum(result[0].block_until_ready())
 
@@ -296,8 +337,10 @@ def main(
                 current_validation_loss > previous_validation_loss1
                 and current_validation_loss > previous_validation_loss2
             ):
-                print("Validation loss is worse than the previous two - early stopping")
-                exit(0)
+                print("Validation loss is worse than the previous two")
+                if early_stopping:
+                    print("Early stopping")
+                    exit(0)
 
             if compute_redshifts_pdfs:
                 print("> Running redshift grids")
@@ -319,7 +362,7 @@ def main(
                     data_batch = datapipe.next_batch(indices_valid, batchsize)
                     si, bs = data_batch[0], data_batch[1]
 
-                    print("> batch", j + 1, "out of", numBatches_valid)
+                    print("> Batch", j + 1, "out of", numBatches_valid)
                     batch_start_time = time.time()
 
                     for iz, z in enumerate(transferfunctions_zgrid[::zstep]):
@@ -330,9 +373,13 @@ def main(
                             continue
 
                         result = bayesianpca(
-                            pcamodel.get_params(),
+                            pcamodel.get_params_opt(),
                             datapipe.change_redshift(iz, zstep, data_batch),
                             polynomials_spec,
+                            n_components,
+                            n_pix_spec,
+                            opt_basis,
+                            opt_priors,
                         )
                         valid_logpz[si : si + bs, iz] = result[0].block_until_ready()
                         xla._xla_callable.cache_clear()
@@ -349,44 +396,52 @@ def main(
                     )
             print_elapsed_time(start_time)
 
-            print("> Back to training")
             previous_validation_loss2 = previous_validation_loss1
             previous_validation_loss1 = current_validation_loss
 
             onp.save(output_dir + "/valid_losses" + suffix, losses_valid[: i + 1, :])
-
-            neworder = jax.random.permutation(key, np.arange(numBatches_train))
-            indices_train_reordered = np.take(indices_train, neworder)
-            datapipe.batch = 0  # reset batch number
-            for j in range(numBatches_train):
-                data_batch = datapipe.next_batch(indices_train_reordered, batchsize)
-                the_loss, opt_state = update(
-                    next(itercount), opt_state, data_batch, polynomials_spec
-                )
-                # logfml, thetamap, thetastd, specmod_map, photmod_map = bayesianpca(
-                #    params, data_batch, polynomials_spec
-                # )
-                losses_train[i, j] = the_loss.block_until_ready()
-                # will force all outputs of jit fct
-
-                # batch_ells = train_specphotscaling[neworder[si : si + bs]]
-                # update scaling, calculated from spec only
-                # updated_batch_ells[updated_batch_ells < 0] = 1.0
-                # train_specphotscaling[neworder[si : si + bs]] = updated_batch_ells
-
-            loss = onp.mean(losses_train[i, :])
-            pcamodel.set_params(get_params(opt_state))  # get updated parameter array
+            print("> Back to training")
             xla._xla_callable.cache_clear()
 
-            print(
-                "> Training loss: %.7e" % loss,
-                " (iteration " + str(i) + ")",
-                end=" - ",
+        neworder = jax.random.permutation(key, np.arange(numObj_train))
+        indices_train_reordered = np.take(indices_train, neworder)
+        datapipe.batch = 0  # reset batch number
+        for j in range(numBatches_train):
+            data_batch = datapipe.next_batch(indices_train_reordered, batchsize)
+            the_loss, opt_state = update(
+                next(itercount),
+                opt_state,
+                data_batch,
+                data_aux,
+                n_components,
+                n_pix_spec,
+                opt_basis,
+                opt_priors,
             )
-            print_elapsed_time(start_time)
+            # logfml, thetamap, thetastd, specmod_map, photmod_map = bayesianpca(
+            #    params, data_batch, polynomials_spec
+            # )
+            losses_train[i, j] = the_loss.block_until_ready()
+            # will force all outputs of jit fct
 
-            # write model to file!
-            pcamodel.write_model()
+            # batch_ells = train_specphotscaling[neworder[si : si + bs]]
+            # update scaling, calculated from spec only
+            # updated_batch_ells[updated_batch_ells < 0] = 1.0
+            # train_specphotscaling[neworder[si : si + bs]] = updated_batch_ells
+
+        loss = onp.mean(losses_train[i, :])
+        pcamodel.set_params(get_params_opt(opt_state))  # get updated parameter array
+        xla._xla_callable.cache_clear()
+
+        print(
+            "> Training loss: %.7e" % loss,
+            " (iteration " + str(i) + ")",
+            end=" - ",
+        )
+        print_elapsed_time(start_time)
+
+        # write model to file!
+        pcamodel.write_model()
 
     print("Learning finished")
 

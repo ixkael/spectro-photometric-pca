@@ -15,7 +15,6 @@ def chebychevPolynomials(n_poly, n_pix_spec):
     res = np.vstack(
         [x * 0 + 1, x, 2 * x ** 2 - 1, 4 * x ** 3 - 3 * x, 8 * x ** 4 - 8 * x ** 2 + 1]
     )  # (n_poly, n_pix_spec)
-    print(res.shape)
     return res[0:n_poly, :]
 
 
@@ -183,50 +182,71 @@ def bayesianpca_specandphot_explicit(
 def loss_speconly(
     params,
     data_batch,
-    polynomials_spec,
+    data_aux,
     n_components,
     n_pix_spec,
+    opt_basis,
+    opt_priors,
 ):
-    (logfml_speconly, _, _, _, _, _) = bayesianpca_speconly(
+    (logfml, _, _, _, _, _) = bayesianpca_speconly(
         params,
         data_batch,
-        polynomials_spec,
+        data_aux,
         n_components,
         n_pix_spec,
+        opt_basis,
+        opt_priors,
     )
-    return -np.sum(logfml_speconly)
+    return -np.sum(logfml)
 
 
 def loss_specandphot(
     params,
     data_batch,
-    polynomials_spec,
+    data_aux,
     n_components,
     n_pix_spec,
+    opt_basis,
+    opt_priors,
 ):
-    (logfml_specandphot, _, _, _, _, _) = bayesianpca_specandphot(
+    (logfml, _, _, _, _, _) = bayesianpca_specandphot(
         params,
         data_batch,
-        polynomials_spec,
+        data_aux,
         n_components,
         n_pix_spec,
+        opt_basis,
+        opt_priors,
     )
-    return -np.sum(logfml_specandphot)
+    return -np.sum(logfml)
 
 
 def bayesianpca_speconly(
     params,
     data_batch,
-    polynomials_spec,
+    data_aux,
     n_components,
     n_pix_spec,
+    opt_basis,
+    opt_priors,
 ):
+
+    if opt_basis and opt_priors:
+        polynomials_spec = data_aux
+        pcacomponents_speconly = params[0]
+        priors_speconly = [params[1], params[2], params[3]]
+    if opt_basis and not opt_priors:
+        priors_speconly, polynomials_spec = data_aux
+        pcacomponents_speconly = params[0]
+    if not opt_basis and opt_priors:
+        pcacomponents_speconly, polynomials_spec = data_aux
+        priors_speconly = params
+
     (
-        pcacomponents_speconly,
         components_prior_params_speconly,
         polynomials_prior_mean_speconly,
         polynomials_prior_loginvvar_speconly,
-    ) = params
+    ) = priors_speconly
 
     (
         si,
@@ -300,16 +320,29 @@ def bayesianpca_speconly(
 def bayesianpca_specandphot(
     params,
     data_batch,
-    polynomials_spec,
+    data_aux,
     n_components,
     n_pix_spec,
+    opt_basis,
+    opt_priors,
 ):
+
+    if opt_basis and opt_priors:
+        polynomials_spec = data_aux
+        pcacomponents_specandphot = params[0]
+        priors_specandphot = [params[1], params[2], params[3]]
+    if opt_basis and not opt_priors:
+        priors_specandphot, polynomials_spec = data_aux
+        pcacomponents_specandphot = params[0]
+    if not opt_basis and opt_priors:
+        pcacomponents_specandphot, polynomials_spec = data_aux
+        priors_specandphot = params
+
     (
-        pcacomponents_specandphot,
         components_prior_params_specandphot,
         polynomials_prior_mean_specandphot,
         polynomials_prior_loginvvar_specandphot,
-    ) = params
+    ) = priors_specandphot
 
     (
         si,
@@ -461,12 +494,30 @@ class PCAModel:
 
         return self.pcacomponents_prior
 
-    def get_params(self):
+    def get_params_opt(self):
         arr = []
         if self.opt_basis:
             arr = [self.pcacomponents]
         if self.opt_priors:
             arr += [
+                self.components_prior_params,
+                self.polynomials_prior_mean,
+                self.polynomials_prior_loginvvar,
+            ]
+        return arr
+
+    def get_params_nonopt(self):
+        arr = []
+        if not self.opt_basis and self.opt_priors:
+            arr = [self.pcacomponents]
+        if self.opt_basis and not self.opt_priors:
+            arr = [
+                self.components_prior_params,
+                self.polynomials_prior_mean,
+                self.polynomials_prior_loginvvar,
+            ]
+        if not self.opt_basis and not self.opt_priors:
+            arr = [self.pcacomponents] + [
                 self.components_prior_params,
                 self.polynomials_prior_mean,
                 self.polynomials_prior_loginvvar,
