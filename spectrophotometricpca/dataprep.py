@@ -193,7 +193,7 @@ def build_sdss_grids(zmax):
 
 
 
-def loop(
+def loop_nearest(
     indices,
     fulldata,
     root_specdata,
@@ -454,12 +454,16 @@ def save_spectrophotometry(
     chi2s_sdss,
     fluxes,
     flux_ivars,
+    processed_interprightindices,
+    processed_interpweights
 ):
 
     np.save(root + "chi2s_sdss", chi2s_sdss)
     # np.save(root + "valid_ids", processed_indices)
     np.save(root + "redshifts", processed_redshifts)
     np.save(root + "lamspec_waveoffset", lamspec_waveoffset)
+    np.save(root + "interprightindices", processed_interprightindices)
+    np.save(root + "interpweights", processed_interpweights)
     np.save(root + "index_wave", processed_index_wave)
     np.save(root + "index_transfer_redshift", processed_index_transfer_redshift)
     np.save(root + "lamgrid", wave_rest_interp)
@@ -476,3 +480,150 @@ def save_spectrophotometry(
     np.save(root + "phot_invvar", flux_ivars)
     print("saved photometry")
     print("all done")
+
+
+
+
+def loop_interp(
+    indices,
+    fulldata,
+    root_specdata,
+    new_logwave_rest_centers,
+    logwavegrid_z,
+    length_cap=4800,
+    correct_for_extinction=True,
+    verbose_step=1000,
+    min_valid_pixels=20,
+):
+
+    transfer_redshift_grid = 10 ** (logwavegrid_z - logwavegrid_z[0]) - 1
+
+    new_logwave_rest_bounds = make_bounds_from_centers(new_logwave_rest_centers)
+
+    processed_logwave_obs = np.zeros((indices.size, length_cap), dtype=np.float32)
+    processed_logwave_obs_start = np.zeros((indices.size,), dtype=np.float32)
+    processed_logwave_obs_end = np.zeros((indices.size,), dtype=np.float32)
+    processed_redshifts = np.zeros((indices.size,), dtype=np.float32)
+    processed_indices = np.zeros((indices.size,), dtype=np.int32)
+    processed_index_transfer_redshift = np.zeros((indices.size,), dtype=np.int32)
+    processed_n_valid_pixels_orig = np.zeros((indices.size,), dtype=np.int32)
+    processed_n_valid_pixels = np.zeros((indices.size,), dtype=np.int32)
+    processed_index_wave = np.zeros((indices.size,), dtype=np.int32)
+    processed_spec = np.zeros((indices.size, length_cap), dtype=np.float32) + np.nan
+    processed_spec_off = np.zeros_like(processed_spec) + np.nan
+    processed_spec_ivar = np.zeros_like(processed_spec)
+
+    offset = 0
+    t1 = time()
+    # loop over objects
+    for loc, idx in enumerate(indices):
+
+        fname = form_filename(root_specdata, fulldata.iloc[idx])
+
+        if os.path.isfile(fname):
+            try:
+                data = Table.read(fname)
+            except:
+                continue
+        else:
+            continue
+
+        redshift = fulldata.iloc[idx]["Z"]
+        if correct_for_extinction:
+            ebv = fulldata.iloc[idx]["EBV"]
+        else:
+            ebv = 0
+
+        logwave_obs, spec, spec_ivar, spec_off = extract_spec(data, ebv=ebv)
+        logwave_obs_rest = logwave_obs - np.log10(1 + redshift)
+
+        assert logwave_obs_rest[-1] < new_logwave_rest_centers[-1]
+
+        # Masking sky lines
+        ind = np.logical_and(logwave_obs >= np.log10(6860), logwave_obs <= np.log10(6920))
+        ind |= np.logical_and(logwave_obs >= np.log10(7150), logwave_obs <= np.log10(7340))
+        ind |= np.logical_and(logwave_obs >= np.log10(7575), logwave_obs <= np.log10(7725))
+        spec_ivar[ind] = 0
+        spec[ind] = np.nan
+
+        #
+        diff_log = np.log10(1 + transfer_redshift_grid) - np.log10(1 + redshift)
+        index_transfer_redshift = np.argmin(diff_log ** 2.0)
+        redshift_ongrid = transfer_redshift_grid[index_transfer_redshift]
+
+        diff_log = logwave_obs_rest[0] - new_logwave_rest_centers
+        index_wave = np.argmin(diff_log ** 2.0)
+
+        def interp(y):
+            return scipy.interpolate.interp1d(
+                logwave_obs_rest, y, kind="linear", bounds_error=False, fill_value=np.nan, assume_sorted=True
+            )(new_logwave_rest_centers[index_wave:index_wave+length_cap])
+        spec_interp = interp(spec)
+        spec_ivar_interp = interp(spec_ivar)
+        spec_off_interp = interp(spec_off)
+        logwave_obs_interp = interp(logwave_obs)
+
+        ind = spec_ivar != 0
+        ind &= np.isfinite(spec_ivar)
+        processed_n_valid_pixels_orig[offset] = np.sum(ind)#np.sum(~spec_ivar.mask)
+        processed_n_valid_pixels[offset] = np.sum(ind)#np.sum(~spec_ivar.mask)
+
+        if processed_n_valid_pixels[offset] < min_valid_pixels:
+            #print("Skipping", idx)
+            continue
+
+        processed_logwave_obs_start[offset] = logwave_obs[0]
+        processed_logwave_obs_end[offset] = logwave_obs[-1]
+        processed_logwave_obs[offset, :] = logwave_obs_interp
+        processed_indices[offset] = idx
+
+        processed_spec[offset, :] = spec_interp
+        processed_spec_ivar[offset, :] = spec_ivar_interp
+        processed_spec_off[offset, :] = spec_off_interp
+
+        processed_redshifts[offset] = redshift
+        processed_index_transfer_redshift[offset] = index_transfer_redshift
+        processed_index_wave[offset] = index_wave
+
+        offset += 1
+
+        if loc > 0 and loc % verbose_step == 0:
+            t2 = time()
+            print(
+                "Processed",
+                loc,
+                "spectra in %.2f" % ((t2 - t1) / 60),
+                "minutes (%.3f" % ((t2 - t1) / loc),
+                "sec per object)",
+            )
+            print("Valid spectra:", offset, "out of", loc)
+            t3 = (indices.size - loc) * ((t2 - t1) / loc)
+            print(
+                "> Estimated remaining time: >> %.2f" % (t3 / 60.0),
+                "minutes << for",
+                indices.size - loc,
+                "objects",
+            )
+
+    chi2s_off = np.nansum(
+        (processed_spec[:offset, :] - processed_spec_off[:offset, :]) ** 2
+        * processed_spec_ivar[:offset, :],
+        axis=-1,
+    )
+
+    return (
+        transfer_redshift_grid,
+        processed_indices[:offset],
+        processed_logwave_obs[:offset, :],
+        processed_logwave_obs_start[:offset],
+        processed_logwave_obs_end[:offset],
+        processed_redshifts[:offset],
+        processed_spec[:offset, :],
+        processed_spec_ivar[:offset, :],
+        processed_spec_off[:offset, :],
+        processed_index_transfer_redshift[:offset],
+        processed_index_wave[:offset],
+        processed_n_valid_pixels[:offset],
+        processed_n_valid_pixels_orig[:offset],
+        chi2s_off,
+    )

@@ -100,6 +100,10 @@ class DataPipeline:
         self.index_transfer_redshift = onp.load(
             self.input_dir + "index_transfer_redshift" + suffix
         )
+        self.interprightindices = onp.load(self.input_dir + "interprightindices" + suffix)
+        self.interpweights = onp.load(
+            self.input_dir + "interpweights" + suffix
+        )
         self.spec = onp.load(self.input_dir + "spec" + suffix)
         self.specmod_sdss = onp.load(self.input_dir + "spec_mod" + suffix)
         self.spec_invvar = onp.load(self.input_dir + "spec_invvar" + suffix)
@@ -137,6 +141,8 @@ class DataPipeline:
             self.index_transfer_redshift = self.index_transfer_redshift[:M]
 
             np.save(self.input_dir + "index_wave" + suffix, self.index_wave[:M])
+            np.save(self.input_dir + "interprightindices" + suffix, self.interprightindices[:M, :])
+            np.save(self.input_dir + "interpweights" + suffix, self.interpweights[:M, :])
             np.save(
                 self.input_dir + "index_transfer_redshift2.npy",
                 self.index_transfer_redshift,
@@ -162,6 +168,8 @@ class DataPipeline:
             self.spec_invvar = self.spec_invvar[:, ::subsampling]
             self.index_wave = self.index_wave // subsampling
             self.index_transfer_redshift = self.index_transfer_redshift // subsampling
+            self.interprightindices = self.interprightindices[:, ::subsampling]
+            self.interpweights = self.interpweights[:, ::subsampling]
 
     @staticmethod
     def save_fake_data(n_obj, n_pix_sed, n_pix_spec, n_pix_phot, n_pix_transfer):
@@ -190,6 +198,14 @@ class DataPipeline:
         np.save(
             root + "index_transfer_redshift.npy",
             randint(key, (n_obj,), 0, n_pix_transfer),
+        )
+        np.save(
+            root + "interprightindices.npy",
+            randint(key, (n_obj, n_pix_spec), 0, n_pix_transfer),
+        )
+        np.save(
+            root + "interpweights.npy",
+            uniform(key, (n_obj, n_pix_spec)),
         )
         np.save(root + "spec.npy", uniform(key, (n_obj, n_pix_spec)))
         np.save(root + "spec_mod.npy", uniform(key, (n_obj, n_pix_spec)))
@@ -325,6 +341,10 @@ class DataPipeline:
         batch_phot_invvar = np.take(self.phot_invvar, batch_indices, axis=0)
         batch_redshifts = np.take(self.redshifts, batch_indices)
         batch_specphotscaling = np.take(self.specphotscalings, batch_indices)
+
+        batch_interpweights = np.take(self.interpweights, batch_indices, axis=0)
+        batch_interprightindices = np.take(self.interprightindices, batch_indices, axis=0)
+
         self.batch += 1
 
         nextbatch_startindex = self.batch * batchsize
@@ -374,6 +394,8 @@ class DataPipeline:
             batch_redshifts,
             batch_transferfunctions,
             batch_index_wave_ext,
+            batch_interprightindices,
+            batch_interpweights
         )
 
     def get_nbatches(self, indices, batchsize):
@@ -398,6 +420,8 @@ class DataPipeline:
             batch_redshifts,
             batch_transferfunctions,
             batch_index_wave_ext,
+            batch_interprightindices,
+            batch_interpweights
         ) = data_batch
 
         batch_transferfunctions = self.transferfunctions[
@@ -427,6 +451,8 @@ class DataPipeline:
             batch_redshifts,
             batch_transferfunctions,
             batch_index_wave_ext,
+            batch_interprightindices,
+            batch_interpweights
         )
 
 

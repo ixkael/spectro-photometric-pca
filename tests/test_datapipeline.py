@@ -37,6 +37,8 @@ def test_bayesianpca_spec_and_specandphot():
         batch_redshifts,
         batch_transferfunctions,
         batch_index_wave_ext,
+        batch_interprightindices,
+        batch_interpweights
     ) = data_batch
 
     assert bs == batchsize
