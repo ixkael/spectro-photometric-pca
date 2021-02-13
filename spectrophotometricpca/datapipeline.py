@@ -272,6 +272,7 @@ class DataPipeline:
 
         # Floor photometric errors
         ind = self.phot_invvar ** -0.5 < 1e-2 * self.phot
+        print("How many phot errors are floored?", np.sum(ind), "out of", ind.size)
         ind = np.where(ind)[0]
         self.phot_invvar[ind] = (1e-2 * self.phot[ind]) ** -2.0
 
@@ -550,3 +551,25 @@ def load_fits_templates(
             off += 1
 
     return y_interp
+
+
+def interp_coefficients(x_grid, x_target):
+    assert np.all(x_target > x_grid[0])
+    assert np.all(x_target < x_grid[-1])
+    rightindices = onp.searchsorted(x_grid, x_target, 'right')
+    d_left = x_target - x_grid[rightindices-1]
+    d_right = x_grid[rightindices] - x_target
+    d_total = d_left + d_right
+    weights = d_right / d_total
+    return rightindices, weights
+
+def create_interp_transfer(interprightindices, interpweights, n_pix_sed):
+    nobj, n_pix_spec = interprightindices.shape
+    transfer = onp.zeros((nobj, n_pix_spec, n_pix_sed))
+    ones = onp.ones((nobj, n_pix_spec), dtype=int)
+    idx1 = onp.arange(nobj)[:, None] * ones
+    idx2 = ones * onp.arange(n_pix_spec)[None, :]
+    idx3 = interprightindices
+    transfer[idx1, idx2, idx3-1] = interpweights
+    transfer[idx1, idx2, idx3] = 1 - interpweights
+    return transfer

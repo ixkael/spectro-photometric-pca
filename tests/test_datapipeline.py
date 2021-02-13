@@ -9,38 +9,6 @@ from chex import assert_shape
 key = jax.random.PRNGKey(42)
 
 
-@partial(jit, static_argnums=(2))  # TODO: remove and use gasp version?
-def take_batch(pcacomponents, start_indices, npix):
-    """
-
-    Parameters
-    ----------
-    pcacomponents: ndarray (n_components, large_nb_of_pixels)
-        Redshift
-    start_indices:  ndarray (nobj, )
-        Indices
-    npix: int
-        Number of pixels to fetch
-
-    Returns
-    -------
-    ndarray (nobj, n_components, npix)
-
-    """
-    n_components, specwavesize = pcacomponents.shape
-    nobj = start_indices.shape[0]
-
-    indices_2d = start_indices[:, None] + np.arange(npix)[None, :]
-
-    indices_0 = np.arange(n_components)[None, :, None] * np.ones(
-        (nobj, n_components, npix), dtype=int
-    )
-    indices_1 = indices_2d[:, None, :] * np.ones((nobj, n_components, npix), dtype=int)
-
-    pcacomponents_atz = pcacomponents[indices_0, indices_1]
-
-    return pcacomponents_atz
-
 
 def test_bayesianpca_spec_and_specandphot():
 
@@ -209,3 +177,30 @@ def test_load_fits_templates():
 
     assert y_new.shape[0] == num_components
     assert y_new.shape[1] == lam.size
+
+def test_interp():
+
+    nobj = 3
+    n_components = 2
+    n_pix_sed = 4
+    n_pix_spec = 5
+
+    x_grid = onp.linspace(0, 1, n_pix_sed)
+    x_target = onp.random.uniform(0, 1, n_pix_spec*nobj).reshape((nobj, n_pix_spec))
+    y_grid = onp.cos(x_grid*10)[None, :] * onp.ones((n_components, n_pix_sed))
+
+    #interprightindices = np.random.randint(1, n_pix_sed-1, n_pix_spec*nobj).reshape((nobj, n_pix_spec))
+    #interpweights = np.random.randn(nobj, n_pix_spec)
+    interprightindices, interpweights = interp_coefficients(x_grid, x_target)
+
+    transfer = onp.zeros((nobj, n_pix_spec, n_pix_sed))
+    for io in range(nobj):
+        for ipix in range(n_pix_spec):
+            transfer[io, ipix, interprightindices[io, ipix] - 1] = interpweights[io, ipix]
+            transfer[io, ipix, interprightindices[io, ipix]] = 1 - interpweights[io, ipix]
+
+    transfer2 = create_interp_transfer(interprightindices, interpweights, n_pix_sed)
+
+    assert np.allclose(transfer, transfer2)
+
+    y_target = np.transpose(np.dot(transfer, y_grid.T), [0, 2, 1]) # nobj, ncomp, n_pix_spec
