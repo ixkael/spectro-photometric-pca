@@ -9,7 +9,6 @@ from chex import assert_shape
 key = jax.random.PRNGKey(42)
 
 
-
 def test_bayesianpca_spec_and_specandphot():
 
     n_obj, n_pix_sed, n_pix_spec, n_pix_phot, n_pix_transfer = 122, 100, 47, 5, 50
@@ -38,7 +37,7 @@ def test_bayesianpca_spec_and_specandphot():
         batch_transferfunctions,
         batch_index_wave_ext,
         batch_interprightindices,
-        batch_interpweights
+        batch_interpweights,
     ) = data_batch
 
     assert bs == batchsize
@@ -180,6 +179,7 @@ def test_load_fits_templates():
     assert y_new.shape[0] == num_components
     assert y_new.shape[1] == lam.size
 
+
 def test_interp():
 
     nobj = 3
@@ -188,21 +188,41 @@ def test_interp():
     n_pix_spec = 5
 
     x_grid = onp.linspace(0, 1, n_pix_sed)
-    x_target = onp.random.uniform(0, 1, n_pix_spec*nobj).reshape((nobj, n_pix_spec))
-    y_grid = onp.cos(x_grid*10)[None, :] * onp.ones((n_components, n_pix_sed))
+    x_target = onp.random.uniform(0, 1, n_pix_spec * nobj).reshape((nobj, n_pix_spec))
+    y_grid = onp.cos(x_grid * 10)[None, :] * onp.ones((n_components, n_pix_sed))
 
-    #interprightindices = np.random.randint(1, n_pix_sed-1, n_pix_spec*nobj).reshape((nobj, n_pix_spec))
-    #interpweights = np.random.randn(nobj, n_pix_spec)
+    # interprightindices = np.random.randint(1, n_pix_sed-1, n_pix_spec*nobj).reshape((nobj, n_pix_spec))
+    # interpweights = np.random.randn(nobj, n_pix_spec)
     interprightindices, interpweights = interp_coefficients(x_grid, x_target)
 
     transfer = onp.zeros((nobj, n_pix_spec, n_pix_sed))
     for io in range(nobj):
         for ipix in range(n_pix_spec):
-            transfer[io, ipix, interprightindices[io, ipix] - 1] = interpweights[io, ipix]
-            transfer[io, ipix, interprightindices[io, ipix]] = 1 - interpweights[io, ipix]
+            transfer[io, ipix, interprightindices[io, ipix] - 1] = interpweights[
+                io, ipix
+            ]
+            transfer[io, ipix, interprightindices[io, ipix]] = (
+                1 - interpweights[io, ipix]
+            )
 
     transfer2 = create_interp_transfer(interprightindices, interpweights, n_pix_sed)
 
     assert np.allclose(transfer, transfer2)
 
-    y_target = np.transpose(np.dot(transfer, y_grid.T), [0, 2, 1]) # nobj, ncomp, n_pix_spec
+    # Need to transpose to have suitable shapez
+    y_target = np.transpose(
+        np.dot(transfer, y_grid.T), [0, 2, 1]
+    )  # nobj, ncomp, n_pix_spec
+    y_target2 = onp.zeros_like(y_target)
+    for io in range(nobj):
+        for ic in range(n_components):
+            y_target2[io, ic, :] = scipy.interpolate.interp1d(
+                x_grid[:],
+                y_grid[ic, :],
+                kind="linear",
+                bounds_error=True,
+                fill_value=0,
+                assume_sorted=True,
+            )(x_target[io, :])
+    print(y_target.shape, y_target2.shape)
+    assert np.allclose(y_target, y_target2)

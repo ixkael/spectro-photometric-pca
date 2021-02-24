@@ -72,21 +72,21 @@ from utils import *
 )
 @click.option(
     "--n_epochs",
-    default=300,
+    default=200,
     show_default=True,
     type=int,
     help="Number of epochs",
 )
 @click.option(
     "--batchsize",
-    default=4096 * 1,  # * 2 or 8,
+    default=3000,  # * 2 or 8,
     show_default=True,
     type=int,
     help="Batch size for training",
 )
 @click.option(
     "--n_components",
-    default=14,
+    default=12,
     show_default=True,
     type=int,
     help="Number of PCA components",
@@ -100,14 +100,14 @@ from utils import *
 )
 @click.option(
     "--learningrate",
-    default=1e-3,
+    default=1e-2,
     show_default=True,
     type=float,
     help="Learning rate for optimisation",
 )
 @click.option(
     "--n_poly",
-    default=2,
+    default=3,
     show_default=True,
     type=int,
     help="Number of chebychev polynomials for spectroscopic systematics",
@@ -357,7 +357,23 @@ def main(
                     onp.zeros((numObj_valid, transferfunctions_zgrid[::zstep].size))
                     + onp.nan
                 )
+                valid_thetamap_z = (
+                    onp.zeros(
+                        (
+                            numObj_valid,
+                            transferfunctions_zgrid[::zstep].size,
+                            n_components + n_poly,
+                        )
+                    )
+                    + onp.nan
+                )
                 datapipe.batch = 0  # reset batch number
+
+                onp.save(
+                    output_dir + "/logpz_zgrid" + suffix,
+                    transferfunctions_zgrid[::zstep],
+                )
+
                 for j in range(numBatches_valid):
                     data_batch = datapipe.next_batch(indices_valid, batchsize)
                     si, bs = data_batch[0], data_batch[1]
@@ -375,25 +391,29 @@ def main(
                         result = bayesianpca(
                             pcamodel.get_params_opt(),
                             datapipe.change_redshift(iz, zstep, data_batch),
-                            polynomials_spec,
+                            data_aux,
                             n_components,
                             n_pix_spec,
                             opt_basis,
                             opt_priors,
                         )
                         valid_logpz[si : si + bs, iz] = result[0].block_until_ready()
+                        valid_thetamap_z[si : si + bs, iz, :] = result[
+                            1
+                        ].block_until_ready()
                         xla._xla_callable.cache_clear()
 
-                    print_remaining_time(batch_start_time, 0, j, numBatches_valid)
-
-                    onp.save(
-                        output_dir + "/logpz_zgrid" + suffix,
-                        transferfunctions_zgrid[::zstep],
-                    )
                     onp.save(
                         output_dir + "/logpz" + suffix,
                         valid_logpz[: si + bs, :],
                     )
+                    onp.save(
+                        output_dir + "/thetamap_z" + suffix,
+                        valid_thetamap_z[: si + bs, :, :],
+                    )
+
+                    print_remaining_time(batch_start_time, 0, j, numBatches_valid)
+
             print_elapsed_time(start_time)
 
             previous_validation_loss2 = previous_validation_loss1

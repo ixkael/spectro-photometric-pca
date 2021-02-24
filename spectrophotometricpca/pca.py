@@ -11,6 +11,7 @@ from gasp.marginallikelihoods_jx import *
 
 from jax.nn import sigmoid
 
+
 def chebychevPolynomials(n_poly, n_pix_spec):
     x = np.linspace(-1.0, 1.0, n_pix_spec)
     res = np.vstack(
@@ -26,22 +27,30 @@ class PriorModel:
         self.n_components = n_components
 
     def random(self, key):
-        params_means = 0 * jax.random.normal(key, (self.n_components, 1)) + 0
-        params_loginvvar = 0 * jax.random.normal(key, (self.n_components, 1)) + 0*np.log(10) # how many log10 octaves
+        params_means = 0 * jax.random.normal(key, (self.n_components, 2))
+        params_loginvvar = 0 * jax.random.normal(key, (self.n_components, 2))
         params = np.hstack([params_means, params_loginvvar])
         return params
 
     @staticmethod
     def get_mean_at_z(params, redshifts):
         cst = np.ones((redshifts.size, 1)) * params[None, :, 0]
-        #slp = redshifts[:, None] * (params[None, :, 1] - params[None, :, 0])
-        return cst#+ slp
+        slp = redshifts[:, None] * (params[None, :, 1] - params[None, :, 0])
+        return cst + slp
 
     @staticmethod
     def get_loginvvar_at_z(params, redshifts):
-        cst = np.ones((redshifts.size, 1)) * params[None, :, 1]
-        #slp = redshifts[:, None] * (params[None, :, 3] - params[None, :, 2])
-        return cst# + slp
+        expparams = np.exp(params)
+        cst = np.ones((redshifts.size, 1)) * expparams[None, :, 2]
+        slp = redshifts[:, None] * (expparams[None, :, 3] - expparams[None, :, 2])
+        stddev = cst + slp
+        return np.log(
+            stddev ** -2
+        )  # because want the stddev to be linear, not the variance
+
+
+def map_to_minusone_one(x):
+    return 2 * sigmoid(x) - 1
 
 
 @jit
@@ -71,18 +80,18 @@ def bayesianpca_speconly_explicit(
         [components_prior_mean, polynomials_prior_mean[None, :] * np.ones((n_obj, 1))],
         axis=-1,
     )
-    muinvvar = 1 / sigmoid(np.concatenate(
+    logmuinvvar = np.concatenate(
         [
             components_prior_loginvvar,
             polynomials_prior_loginvvar[None, :] * np.ones((n_obj, 1)),
         ],
         axis=-1,
-    ))
-    #muinvvar = np.exp(logmuinvvar)
+    )
+    muinvvar = np.exp(logmuinvvar)
     # if shape is [n_obj, n_components] instead of [n_poly]
-    #mu = polynomials_prior_mean
-    #muinvvar = np.exp(polynomials_prior_loginvvar)
-    logmuinvvar = np.log(muinvvar)  # Assume no mask in last dimension
+    # mu = polynomials_prior_mean
+    # muinvvar = np.exp(polynomials_prior_loginvvar)
+    # logmuinvvar = np.log(muinvvar)  # Assume no mask in last dimension
     (
         logfml,
         thetamap,
@@ -144,18 +153,18 @@ def bayesianpca_specandphot_explicit(
         [components_prior_mean, polynomials_prior_mean[None, :] * np.ones((n_obj, 1))],
         axis=-1,
     )
-    muinvvar = 1 / sigmoid(np.concatenate(
+    logmuinvvar = np.concatenate(
         [
             components_prior_loginvvar,
             polynomials_prior_loginvvar[None, :] * np.ones((n_obj, 1)),
-            ],
+        ],
         axis=-1,
-    ))
-    #muinvvar = np.exp(logmuinvvar)
+    )
+    muinvvar = np.exp(logmuinvvar)
     # if shape is [n_obj, n_components] instead of [n_poly]
-    #mu = polynomials_prior_mean
-    #muinvvar = np.exp(polynomials_prior_loginvvar)
-    logmuinvvar = np.log(muinvvar)  # Assume no mask in last dimension
+    # mu = polynomials_prior_mean
+    # muinvvar = np.exp(polynomials_prior_loginvvar)
+    # logmuinvvar = np.log(muinvvar)  # Assume no mask in last dimension
     (
         logfml,
         thetamap,
@@ -272,15 +281,27 @@ def bayesianpca_speconly(
         batch_transferfunctions,
         batch_index_wave_ext,
         batch_interprightindices,
-        batch_interpweights
+        batch_interpweights,
     ) = data_batch
 
     # ones = np.ones((bs, 1))
     # batch_index_wave = np.zeros((bs,), int)
+    indices_0, indices_1 = batch_indices_2(
+        batch_interprightindices, n_components, n_pix_spec
+    )
+    # indices_0, indices_1 = batch_indices(batch_index_wave, n_components, n_pix_spec)
 
-    indices_0, indices_1 = batch_indices(batch_index_wave, n_components, n_pix_spec)
-
-    pcacomponents_speconly_atz = pcacomponents_speconly[indices_0, indices_1]
+    # pcacomponents_speconly is (n_components, n_pix_sed)
+    # batch_index_wave is (nobj, )
+    # batch_interprightindices is (nobj, n_pix_spec)
+    # pcacomponents_speconly_atz is (nobj, n_components, n_pix_spec)
+    # pcacomponents_speconly_atz = pcacomponents_speconly[indices_0, indices_1]
+    pcacomponents_speconly_atz = (
+        batch_interpweights[:, None, :]
+        * pcacomponents_speconly[indices_0, indices_1 - 1]
+        + (1 - batch_interpweights[:, None, :])
+        * pcacomponents_speconly[indices_0, indices_1]
+    )
     components_phot_speconly = np.sum(
         pcacomponents_speconly[None, :, :, None]
         * batch_transferfunctions[:, None, :, :],
@@ -370,11 +391,18 @@ def bayesianpca_specandphot(
         batch_transferfunctions,
         batch_index_wave_ext,
         batch_interprightindices,
-        batch_interpweights
+        batch_interpweights,
     ) = data_batch
 
-    indices_0, indices_1 = batch_indices(batch_index_wave, n_components, n_pix_spec)
-    pcacomponents_specandphot_atz = pcacomponents_specandphot[indices_0, indices_1]
+    indices_0, indices_1 = batch_indices_2(
+        batch_interprightindices, n_components, n_pix_spec
+    )
+    pcacomponents_specandphot_atz = (
+        batch_interpweights[:, None, :]
+        * pcacomponents_specandphot[indices_0, indices_1 - 1]
+        + (1 - batch_interpweights[:, None, :])
+        * pcacomponents_specandphot[indices_0, indices_1]
+    )
     components_phot_specandphot = np.sum(
         pcacomponents_specandphot[None, :, :, None]
         * batch_transferfunctions[:, None, :, :],
@@ -388,12 +416,12 @@ def bayesianpca_specandphot(
     )
 
     # only if polynomial prior is redshift dependent
-    #polynomials_prior_mean_specandphot = PriorModel.get_loginvvar_at_z(
+    # polynomials_prior_mean_specandphot = PriorModel.get_loginvvar_at_z(
     #    components_prior_params_specandphot, batch_redshifts
-    #)
-    #polynomials_prior_loginvvar_specandphot = PriorModel.get_mean_at_z(
+    # )
+    # polynomials_prior_loginvvar_specandphot = PriorModel.get_mean_at_z(
     #    components_prior_params_specandphot, batch_redshifts
-    #)
+    # )
 
     (_, thetamap_speconly, _, _,) = bayesianpca_speconly_explicit(
         pcacomponents_specandphot_atz,  # [n_obj, n_components, nspec]
@@ -461,6 +489,17 @@ def batch_indices(start_indices, n_components, npix):
     return indices_0, indices_1
 
 
+def batch_indices_2(start_indices, n_components, npix):
+    nobj, n_pix_spec = start_indices.shape
+
+    indices_0 = np.arange(n_components)[None, :, None] * np.ones(
+        (nobj, n_components, npix), dtype=int
+    )
+    indices_1 = start_indices[:, None, :] * np.ones((1, n_components, npix), dtype=int)
+
+    return indices_0, indices_1
+
+
 class PCAModel:
     def __init__(self, polynomials_spec, prefix, suffix):
         self.prefix = prefix
@@ -509,7 +548,11 @@ class PCAModel:
         self.pcacomponents = jax.random.normal(key, (n_components, n_pix_sed))
         self.components_prior_params = self.pcacomponents_prior.random(key)
         self.polynomials_prior_mean = 0 * jax.random.normal(key, (n_poly,)) + 0
-        self.polynomials_prior_loginvvar = 0 * jax.random.normal(key, (n_poly,)) + 2*np.log(10) # how many log10 octaves
+        self.polynomials_prior_loginvvar = 0 * jax.random.normal(
+            key, (n_poly,)
+        ) + 0 * np.log(
+            10
+        )  # how many log10 octaves
 
         return self.pcacomponents_prior
 

@@ -100,10 +100,10 @@ class DataPipeline:
         self.index_transfer_redshift = onp.load(
             self.input_dir + "index_transfer_redshift" + suffix
         )
-        self.interprightindices = onp.load(self.input_dir + "interprightindices" + suffix)
-        self.interpweights = onp.load(
-            self.input_dir + "interpweights" + suffix
+        self.interprightindices = onp.load(
+            self.input_dir + "interprightindices" + suffix
         )
+        self.interpweights = onp.load(self.input_dir + "interpweights" + suffix)
         self.spec = onp.load(self.input_dir + "spec" + suffix)
         self.specmod_sdss = onp.load(self.input_dir + "spec_mod" + suffix)
         self.spec_invvar = onp.load(self.input_dir + "spec_invvar" + suffix)
@@ -141,8 +141,13 @@ class DataPipeline:
             self.index_transfer_redshift = self.index_transfer_redshift[:M]
 
             np.save(self.input_dir + "index_wave" + suffix, self.index_wave[:M])
-            np.save(self.input_dir + "interprightindices" + suffix, self.interprightindices[:M, :])
-            np.save(self.input_dir + "interpweights" + suffix, self.interpweights[:M, :])
+            np.save(
+                self.input_dir + "interprightindices" + suffix,
+                self.interprightindices[:M, :],
+            )
+            np.save(
+                self.input_dir + "interpweights" + suffix, self.interpweights[:M, :]
+            )
             np.save(
                 self.input_dir + "index_transfer_redshift2.npy",
                 self.index_transfer_redshift,
@@ -168,8 +173,12 @@ class DataPipeline:
             self.spec_invvar = self.spec_invvar[:, ::subsampling]
             self.index_wave = self.index_wave // subsampling
             self.index_transfer_redshift = self.index_transfer_redshift // subsampling
-            self.interprightindices = self.interprightindices[:, ::subsampling]
-            self.interpweights = self.interpweights[:, ::subsampling]
+            self.interprightindices = (
+                self.interprightindices[:, ::subsampling] // subsampling
+            )
+            self.interpweights = (
+                self.interpweights[:, ::subsampling] / subsampling
+            )  # dilution
 
     @staticmethod
     def save_fake_data(n_obj, n_pix_sed, n_pix_spec, n_pix_phot, n_pix_transfer):
@@ -219,7 +228,6 @@ class DataPipeline:
         input_dir="./",
         subsampling=1,
         npix_min=1,
-        lambda_start=None,
         write_subset=False,
         use_subset=False,
     ):
@@ -234,7 +242,6 @@ class DataPipeline:
         self.batch = 0
         self.subsampling = subsampling
         self.npix_min = npix_min
-        self.lambda_start = lambda_start
 
         # Multiplying by delta lambda in preparation for integral over lambda
         xbounds = onp.zeros(self.lamgrid.size + 1)
@@ -244,18 +251,6 @@ class DataPipeline:
         xsizes = np.asarray(np.diff(xbounds))
         self.transferfunctions = self.transferfunctions * xsizes[None, :, None]
 
-        if lambda_start is not None:
-            # Truncate a small section to reduce memory requirements.
-            idx_start = onp.where(self.lamgrid > lambda_start)[0][0]
-            print("idx_start", idx_start)
-            self.lamgrid = np.asarray(self.lamgrid[idx_start:])
-            self.transferfunctions = np.asarray(
-                self.transferfunctions[:, idx_start:, :]
-            )
-            # self.initial_pca = self.initial_pca[:, idx_start:]
-            self.index_wave = np.asarray(self.index_wave - idx_start)
-            self.lamspec_waveoffset = np.asarray(self.lamspec_waveoffset - idx_start)
-
         print("Initial lamgrid shape:", self.lamgrid.shape)
         print("Initial spec shape:", self.spec.shape)
         print("Initial phot shape:", self.phot.shape)
@@ -263,6 +258,8 @@ class DataPipeline:
         self.spec_invvar[~onp.isfinite(self.spec)] = 0
         self.spec_invvar[~onp.isfinite(self.spec_invvar)] = 0
         self.spec_invvar[self.spec_invvar < 0] = 0
+        self.spec_invvar[self.interpweights < 0] = 0
+        self.spec_invvar[self.interprightindices < 0] = 0
         self.spec[~onp.isfinite(self.spec)] = 0
 
         # Masking sky lines
@@ -276,10 +273,10 @@ class DataPipeline:
         print("lamgrid", self.lamgrid.size)
 
         # Floor spectroscopic errors
-        ind = self.spec_invvar ** -0.5 < 1e-3 * np.abs(self.spec)
+        ind = self.spec_invvar ** -0.5 < 1e-4 * np.abs(self.spec)
         ind = np.where(ind)[0]
         print("How many spec errors are floored?", np.sum(ind), "out of", ind.size)
-        self.spec_invvar[ind] = (1e-3 * np.abs(self.spec)[ind]) ** -2.0
+        self.spec_invvar[ind] = (1e-4 * np.abs(self.spec)[ind]) ** -2.0
 
         # Calculated after changing the data
         self.chi2s_sdss = np.sum(
@@ -343,8 +340,9 @@ class DataPipeline:
         batch_specphotscaling = np.take(self.specphotscalings, batch_indices)
 
         batch_interpweights = np.take(self.interpweights, batch_indices, axis=0)
-        batch_interprightindices = np.take(self.interprightindices, batch_indices, axis=0)
-
+        batch_interprightindices = np.take(
+            self.interprightindices, batch_indices, axis=0
+        )
         self.batch += 1
 
         nextbatch_startindex = self.batch * batchsize
@@ -362,6 +360,7 @@ class DataPipeline:
         batch_index_wave_ext = batch_index_wave[:, None] + np.arange(
             batch_spec.shape[1]
         )
+
         if np.sum(batch_index_wave_ext < 0) > 0:
             print(
                 "Number of negative wave indices:",
@@ -395,7 +394,7 @@ class DataPipeline:
             batch_transferfunctions,
             batch_index_wave_ext,
             batch_interprightindices,
-            batch_interpweights
+            batch_interpweights,
         )
 
     def get_nbatches(self, indices, batchsize):
@@ -421,7 +420,7 @@ class DataPipeline:
             batch_transferfunctions,
             batch_index_wave_ext,
             batch_interprightindices,
-            batch_interpweights
+            batch_interpweights,
         ) = data_batch
 
         batch_transferfunctions = self.transferfunctions[
@@ -429,7 +428,11 @@ class DataPipeline:
         ] * onp.ones((bs, 1, 1))
         # batch_index_wave = np.repeat(self.lamspec_waveoffset - iz * zstep, bs) # not correct with new arrays
         batch_index_wave_z0 = batch_index_wave + batch_index_transfer_redshift
+        batch_interprightindices_z0 = (
+            batch_interprightindices + batch_index_transfer_redshift[:, None]
+        )
         batch_index_wave = batch_index_wave_z0 - iz * zstep
+        batch_interprightindices = batch_interprightindices_z0 - iz * zstep
         batch_index_wave_ext = batch_index_wave[:, None] + onp.arange(spec.shape[1])
         # batch_index_wave_ext[batch_index_wave_ext < 0] = 0 # TODO: is this a problem?
 
@@ -452,7 +455,7 @@ class DataPipeline:
             batch_transferfunctions,
             batch_index_wave_ext,
             batch_interprightindices,
-            batch_interpweights
+            batch_interpweights,
         )
 
 
@@ -582,12 +585,13 @@ def load_fits_templates(
 def interp_coefficients(x_grid, x_target):
     assert np.all(x_target > x_grid[0])
     assert np.all(x_target < x_grid[-1])
-    rightindices = onp.searchsorted(x_grid, x_target, 'right')
-    d_left = x_target - x_grid[rightindices-1]
+    rightindices = onp.searchsorted(x_grid, x_target, "right")
+    d_left = x_target - x_grid[rightindices - 1]
     d_right = x_grid[rightindices] - x_target
     d_total = d_left + d_right
     weights = d_right / d_total
     return rightindices, weights
+
 
 def create_interp_transfer(interprightindices, interpweights, n_pix_sed):
     nobj, n_pix_spec = interprightindices.shape
@@ -596,6 +600,6 @@ def create_interp_transfer(interprightindices, interpweights, n_pix_sed):
     idx1 = onp.arange(nobj)[:, None] * ones
     idx2 = ones * onp.arange(n_pix_spec)[None, :]
     idx3 = interprightindices
-    transfer[idx1, idx2, idx3-1] = interpweights
+    transfer[idx1, idx2, idx3 - 1] = interpweights
     transfer[idx1, idx2, idx3] = 1 - interpweights
     return transfer
