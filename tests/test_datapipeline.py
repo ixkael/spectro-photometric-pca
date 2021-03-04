@@ -18,7 +18,7 @@ def test_bayesianpca_spec_and_specandphot():
     dataPipeline = DataPipeline("data/fake/fake_")
 
     batchsize = 20
-    data_batch = dataPipeline.next_batch(dataPipeline.indices, batchsize)
+    data_batch = dataPipeline.next_batch_specandphot(dataPipeline.indices, batchsize)
 
     (
         si,
@@ -53,10 +53,44 @@ def test_bayesianpca_spec_and_specandphot():
 
     n_components = 3
     pcacomponents_speconly = jax.random.normal(key, (n_components, n_pix_sed))
-    pcacomponents_speconly_atz = take_batch(
-        pcacomponents_speconly, batch_index_wave, n_pix_spec
+    # pcacomponents_speconly_atz = take_batch(
+    #    pcacomponents_speconly, batch_index_wave, n_pix_spec
+    # )
+    # assert_shape(pcacomponents_speconly_atz, (bs, n_components, n_pix_spec))
+
+
+def test_bayesianpca_photonly():
+
+    n_obj, n_pix_sed, n_pix_spec, n_pix_phot, n_pix_transfer = 122, 100, 47, 5, 50
+    dataPipeline = DataPipeline.save_fake_data(
+        n_obj, n_pix_sed, n_pix_spec, n_pix_phot, n_pix_transfer
     )
-    assert_shape(pcacomponents_speconly_atz, (bs, n_components, n_pix_spec))
+    dataPipeline = DataPipeline("data/fake/fake_", phot=True, spec=False)
+
+    batchsize = 20
+    data_batch = dataPipeline.next_batch_photonly(dataPipeline.indices, batchsize)
+
+    (
+        si,
+        bs,
+        phot,
+        phot_invvar,
+        phot_loginvvar,
+        batch_redshifts,
+        transferfunctions,
+        batch_interprightindices_transfer,
+        batch_interpweights_transfer,
+    ) = data_batch
+
+    assert bs == batchsize
+    assert si == 0
+    assert_shape(phot, (bs, n_pix_phot))
+    assert_shape(phot_invvar, (bs, n_pix_phot))
+    assert_shape(phot_loginvvar, (bs, n_pix_phot))
+    assert_shape(batch_redshifts, (bs,))
+    assert_shape(transferfunctions, (n_pix_transfer, n_pix_sed, n_pix_phot))
+    assert_shape(batch_interprightindices_transfer, (bs,))
+    assert_shape(batch_interpweights_transfer, (bs,))
 
 
 def test_results():
@@ -89,7 +123,7 @@ def test_results():
     ellfactors = jax.random.normal(key, (n_obj_out,))
 
     for _ in range(n_batches):
-        data_batch = dataPipeline.next_batch(indices, batchsize)
+        data_batch = dataPipeline.next_batch_specandphot(indices, batchsize)
 
         si, bs = data_batch[0], data_batch[1]
         print(si, si + bs)

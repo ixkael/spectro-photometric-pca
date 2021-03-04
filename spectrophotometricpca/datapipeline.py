@@ -72,62 +72,79 @@ class DataPipeline:
         write_subset=False,
         use_subset=False,
         subsampling=1,
+        spec=True,
+        phot=True,
     ):
-
-        self.input_dir = input_dir
-
-        self.lamgrid = onp.load(self.input_dir + "lamgrid.npy")
-        self.lam_phot_eff = onp.load(self.input_dir + "lam_phot_eff.npy")
-        self.lam_phot_size_eff = onp.load(self.input_dir + "lam_phot_size_eff.npy")
-        self.transferfunctions = onp.load(self.input_dir + "transferfunctions.npy")
-        self.transferfunctions_zgrid = onp.load(
-            self.input_dir + "transferfunctions_zgrid.npy"
-        )
-
-        assert self.transferfunctions.shape[0] == self.transferfunctions_zgrid.size
-        assert self.transferfunctions.shape[1] == self.lamgrid.size
 
         if use_subset:
             suffix = "2.npy"
         else:
             suffix = ".npy"
 
-        self.chi2s_sdss = onp.load(self.input_dir + "chi2s_sdss" + suffix)
-        self.lamspec_waveoffset = int(
-            onp.load(self.input_dir + "lamspec_waveoffset" + suffix)
-        )
-        self.index_wave = onp.load(self.input_dir + "index_wave" + suffix)
-        self.index_transfer_redshift = onp.load(
-            self.input_dir + "index_transfer_redshift" + suffix
-        )
-        self.interprightindices = onp.load(
-            self.input_dir + "interprightindices" + suffix
-        )
-        self.interpweights = onp.load(self.input_dir + "interpweights" + suffix)
-        self.spec = onp.load(self.input_dir + "spec" + suffix)
-        self.specmod_sdss = onp.load(self.input_dir + "spec_mod" + suffix)
-        self.spec_invvar = onp.load(self.input_dir + "spec_invvar" + suffix)
-        self.phot = fluxes = onp.load(self.input_dir + "phot" + suffix)
-        self.phot_invvar = flux_ivars = onp.load(
-            self.input_dir + "phot_invvar" + suffix
-        )
-        self.redshifts = onp.load(self.input_dir + "redshifts" + suffix)
+        self.input_dir = input_dir
 
-        n_obj = self.chi2s_sdss.shape[0]
-        assert_shape(self.chi2s_sdss, (n_obj,))
-        assert_shape(self.index_wave, (n_obj,))
-        assert_shape(self.index_transfer_redshift, (n_obj,))
-        n_pix_spec = self.spec.shape[1]
-        assert_shape(self.spec, (n_obj, n_pix_spec))
-        assert_shape(self.specmod_sdss, (n_obj, n_pix_spec))
-        assert_shape(self.spec_invvar, (n_obj, n_pix_spec))
-        n_pix_phot = self.phot.shape[1]
-        assert_shape(self.phot, (n_obj, n_pix_phot))
-        assert_shape(self.phot_invvar, (n_obj, n_pix_phot))
+        self.lamgrid = onp.load(self.input_dir + "lamgrid.npy")
+        self.lam_phot_eff = onp.load(self.input_dir + "lam_phot_eff.npy")
+        self.lam_phot_size_eff = onp.load(self.input_dir + "lam_phot_size_eff.npy")
+
+        self.redshifts = onp.load(self.input_dir + "redshifts" + suffix)
+        n_obj = self.redshifts.size
+        self.n_obj = n_obj
         assert_shape(self.redshifts, (n_obj,))
 
-        self.n_obj, self.n_pix_phot = self.phot.shape
-        self.n_pix_specels = self.spec.shape[1]
+        if phot:
+            self.transferfunctions = onp.load(self.input_dir + "transferfunctions.npy")
+            self.transferfunctions_zgrid = onp.load(
+                self.input_dir + "transferfunctions_zgrid.npy"
+            )
+
+            assert self.transferfunctions.shape[0] == self.transferfunctions_zgrid.size
+            assert self.transferfunctions.shape[1] == self.lamgrid.size
+            self.index_transfer_redshift = onp.load(
+                self.input_dir + "index_transfer_redshift" + suffix
+            )
+            self.interprightindices_transfer = onp.load(
+                self.input_dir + "interprightindices_transfer" + suffix
+            )
+            self.interpweights_transfer = onp.load(
+                self.input_dir + "interpweights_transfer" + suffix
+            )
+            self.phot = fluxes = onp.load(self.input_dir + "phot" + suffix)
+            self.phot_invvar = flux_ivars = onp.load(
+                self.input_dir + "phot_invvar" + suffix
+            )
+            assert_shape(self.index_transfer_redshift, (n_obj,))
+            assert_shape(self.interprightindices_transfer, (n_obj,))
+            assert_shape(self.interpweights_transfer, (n_obj,))
+
+            n_pix_phot = self.phot.shape[1]
+            assert_shape(self.phot, (n_obj, n_pix_phot))
+            assert_shape(self.phot_invvar, (n_obj, n_pix_phot))
+            self.n_pix_phot = self.phot.shape[1]
+
+        if spec:
+            self.chi2s_sdss = onp.load(self.input_dir + "chi2s_sdss" + suffix)
+            self.lamspec_waveoffset = int(
+                onp.load(self.input_dir + "lamspec_waveoffset" + suffix)
+            )
+            self.index_wave = onp.load(self.input_dir + "index_wave" + suffix)
+            self.interprightindices = onp.load(
+                self.input_dir + "interprightindices" + suffix
+            )
+            self.interpweights = onp.load(self.input_dir + "interpweights" + suffix)
+
+            self.spec = onp.load(self.input_dir + "spec_mod" + suffix)
+            self.specmod_sdss = onp.load(self.input_dir + "spec_mod" + suffix)
+            self.spec_invvar = onp.load(self.input_dir + "spec_invvar" + suffix) * 0 + 1
+
+            self.n_pix_specels = self.spec.shape[1]
+
+            assert_shape(self.chi2s_sdss, (n_obj,))
+            assert_shape(self.index_wave, (n_obj,))
+            n_pix_spec = self.spec.shape[1]
+            assert_shape(self.spec, (n_obj, n_pix_spec))
+            assert_shape(self.specmod_sdss, (n_obj, n_pix_spec))
+            assert_shape(self.spec_invvar, (n_obj, n_pix_spec))
 
         if write_subset:
 
@@ -142,11 +159,12 @@ class DataPipeline:
 
             np.save(self.input_dir + "index_wave" + suffix, self.index_wave[:M])
             np.save(
-                self.input_dir + "interprightindices" + suffix,
-                self.interprightindices[:M, :],
+                self.input_dir + "interprightindices_transfer" + suffix,
+                self.interprightindices_transfer[:M, :],
             )
             np.save(
-                self.input_dir + "interpweights" + suffix, self.interpweights[:M, :]
+                self.input_dir + "interpweights_transfer" + suffix,
+                self.interpweights_transfer[:M, :],
             )
             np.save(
                 self.input_dir + "index_transfer_redshift2.npy",
@@ -179,6 +197,12 @@ class DataPipeline:
             self.interpweights = (
                 self.interpweights[:, ::subsampling] / subsampling
             )  # dilution
+            self.interprightindices_transfer = (
+                self.interprightindices_transfer // subsampling
+            )  # is it correct?
+            self.interpweights_transfer = (
+                self.interpweights_transfer / subsampling
+            )  # is it correct?
 
     @staticmethod
     def save_fake_data(n_obj, n_pix_sed, n_pix_spec, n_pix_phot, n_pix_transfer):
@@ -216,6 +240,14 @@ class DataPipeline:
             root + "interpweights.npy",
             uniform(key, (n_obj, n_pix_spec)),
         )
+        np.save(
+            root + "interprightindices_transfer.npy",
+            randint(key, (n_obj,), 0, n_pix_transfer),
+        )
+        np.save(
+            root + "interpweights_transfer.npy",
+            uniform(key, (n_obj,)),
+        )
         np.save(root + "spec.npy", uniform(key, (n_obj, n_pix_spec)))
         np.save(root + "spec_mod.npy", uniform(key, (n_obj, n_pix_spec)))
         np.save(root + "spec_invvar.npy", uniform(key, (n_obj, n_pix_spec)))
@@ -230,6 +262,8 @@ class DataPipeline:
         npix_min=1,
         write_subset=False,
         use_subset=False,
+        spec=True,
+        phot=True,
     ):
 
         self.load_spectrophotometry(
@@ -237,72 +271,79 @@ class DataPipeline:
             write_subset=write_subset,
             use_subset=use_subset,
             subsampling=subsampling,
+            spec=spec,
+            phot=phot,
         )
+        self.indices = np.arange(self.n_obj)
 
         self.batch = 0
         self.subsampling = subsampling
         self.npix_min = npix_min
 
-        # Multiplying by delta lambda in preparation for integral over lambda
-        xbounds = onp.zeros(self.lamgrid.size + 1)
-        xbounds[1:-1] = (self.lamgrid[1:] + self.lamgrid[:-1]) / 2
-        xbounds[0] = self.lamgrid[0] - (xbounds[1] - self.lamgrid[0])
-        xbounds[-1] = self.lamgrid[-1] + (self.lamgrid[-1] - xbounds[-2])
-        xsizes = np.asarray(np.diff(xbounds))
-        self.transferfunctions = self.transferfunctions * xsizes[None, :, None]
+        if phot:
+            # Multiplying by delta lambda in preparation for integral over lambda
+            xbounds = onp.zeros(self.lamgrid.size + 1)
+            xbounds[1:-1] = (self.lamgrid[1:] + self.lamgrid[:-1]) / 2
+            xbounds[0] = self.lamgrid[0] - (xbounds[1] - self.lamgrid[0])
+            xbounds[-1] = self.lamgrid[-1] + (self.lamgrid[-1] - xbounds[-2])
+            xsizes = np.asarray(np.diff(xbounds))
+            self.transferfunctions = self.transferfunctions * xsizes[None, :, None]
 
         print("Initial lamgrid shape:", self.lamgrid.shape)
-        print("Initial spec shape:", self.spec.shape)
-        print("Initial phot shape:", self.phot.shape)
-        # spec[spec <= 0] = np.nan
-        self.spec_invvar[~onp.isfinite(self.spec)] = 0
-        self.spec_invvar[~onp.isfinite(self.spec_invvar)] = 0
-        self.spec_invvar[self.spec_invvar < 0] = 0
-        self.spec_invvar[self.interpweights < 0] = 0
-        self.spec_invvar[self.interprightindices < 0] = 0
-        self.spec[~onp.isfinite(self.spec)] = 0
 
-        # Masking sky lines
-        lamsize_spec = self.spec.shape[1]
-        print(
-            "lamspec_waveoffset",
-            self.lamspec_waveoffset,
-            self.lamgrid[self.lamspec_waveoffset],
-        )
-        print("lamsize_spec", lamsize_spec)
-        print("lamgrid", self.lamgrid.size)
+        if spec:
 
-        # Floor spectroscopic errors
-        ind = self.spec_invvar ** -0.5 < 1e-4 * np.abs(self.spec)
-        ind = np.where(ind)[0]
-        print("How many spec errors are floored?", np.sum(ind), "out of", ind.size)
-        self.spec_invvar[ind] = (1e-4 * np.abs(self.spec)[ind]) ** -2.0
+            print("Initial spec shape:", self.spec.shape)
+            # spec[spec <= 0] = np.nan
+            self.spec_invvar[~onp.isfinite(self.spec)] = 0
+            self.spec_invvar[~onp.isfinite(self.spec_invvar)] = 0
+            self.spec_invvar[self.spec_invvar < 0] = 0
+            self.spec_invvar[self.interpweights < 0] = 0
+            self.spec_invvar[self.interprightindices < 0] = 0
+            self.spec[~onp.isfinite(self.spec)] = 0
 
-        # Calculated after changing the data
-        self.chi2s_sdss = np.sum(
-            (self.specmod_sdss - self.spec) ** 2 * self.spec_invvar, axis=-1
-        )
+            # Masking sky lines
+            lamsize_spec = self.spec.shape[1]
+            print(
+                "lamspec_waveoffset",
+                self.lamspec_waveoffset,
+                self.lamgrid[self.lamspec_waveoffset],
+            )
+            print("lamsize_spec", lamsize_spec)
+            print("lamgrid", self.lamgrid.size)
 
-        # Floor photometric errors
-        ind = self.phot_invvar ** -0.5 < 1e-2 * self.phot
-        print("How many phot errors are floored?", np.sum(ind), "out of", ind.size)
-        ind = np.where(ind)[0]
-        self.phot_invvar[ind] = (1e-2 * self.phot[ind]) ** -2.0
+            # Floor spectroscopic errors
+            ind = self.spec_invvar ** -0.5 < 1e-4 * np.abs(self.spec)
+            ind = np.where(ind)[0]
+            print("How many spec errors are floored?", np.sum(ind), "out of", ind.size)
+            self.spec_invvar[ind] = (1e-4 * np.abs(self.spec)[ind]) ** -2.0
 
-        self.specphotscalings = np.ones((self.spec.shape[0],))
+            # Calculated after changing the data
+            self.chi2s_sdss = np.sum(
+                (self.specmod_sdss - self.spec) ** 2 * self.spec_invvar, axis=-1
+            )
+            print("Revised data shape:", self.spec.shape)
+
+            # masks = create_mask(self.spec, self.spec_invvar, self.index_wave)
+            masks = ~(self.spec_invvar == 0)
+            npix = np.sum(masks, axis=1)
+            print("Number of objects with 0 valid pixels:", np.sum(npix == 0))
+            print("Number of objects with <10 valid pixels:", np.sum(npix <= 10))
+            print("Number of objects with <100 valid pixels:", np.sum(npix <= 100))
+            self.indices = onp.where(npix > npix_min)[0]
+            onp.random.shuffle(self.indices)
+            print("Number of objects with valid pixels:", self.indices.size)
+            self.specphotscalings = np.ones((self.spec.shape[0],))
+
+        if phot:
+            print("Initial phot shape:", self.phot.shape)
+            # Floor photometric errors
+            ind = self.phot_invvar ** -0.5 < 1e-2 * self.phot
+            print("How many phot errors are floored?", np.sum(ind), "out of", ind.size)
+            ind = np.where(ind)[0]
+            self.phot_invvar[ind] = (1e-2 * self.phot[ind]) ** -2.0
 
         print("Finished pre-processing data.")
-        print("Revised data shape:", self.spec.shape)
-
-        # masks = create_mask(self.spec, self.spec_invvar, self.index_wave)
-        masks = ~(self.spec_invvar == 0)
-        npix = np.sum(masks, axis=1)
-        print("Number of objects with 0 valid pixels:", np.sum(npix == 0))
-        print("Number of objects with <10 valid pixels:", np.sum(npix <= 10))
-        print("Number of objects with <100 valid pixels:", np.sum(npix <= 100))
-        self.indices = onp.where(npix > npix_min)[0]
-        onp.random.shuffle(self.indices)
-        print("Number of objects with valid pixels:", self.indices.size)
 
     def get_grids(self):
         n_pix_sed = self.lamgrid.size
@@ -322,7 +363,7 @@ class DataPipeline:
             n_pix_phot,
         )
 
-    def next_batch(self, indices, batchsize):
+    def next_batch_specandphot(self, indices, batchsize):
         length = indices.size
         startindex = self.batch * batchsize
         batch_indices = indices[startindex : startindex + batchsize]
@@ -395,6 +436,44 @@ class DataPipeline:
             batch_index_wave_ext,
             batch_interprightindices,
             batch_interpweights,
+        )
+
+    def next_batch_photonly(self, indices, batchsize):
+        length = indices.size
+        startindex = self.batch * batchsize
+        batch_indices = indices[startindex : startindex + batchsize]
+        batch_phot = np.take(self.phot, batch_indices, axis=0)
+        batch_phot_invvar = np.take(self.phot_invvar, batch_indices, axis=0)
+        batch_redshifts = np.take(self.redshifts, batch_indices)
+
+        batch_interpweights_transfer = np.take(
+            self.interpweights_transfer, batch_indices, axis=0
+        )
+        batch_interprightindices_transfer = np.take(
+            self.interprightindices_transfer, batch_indices, axis=0
+        )
+        self.batch += 1
+
+        nextbatch_startindex = self.batch * batchsize
+        if nextbatch_startindex >= length:
+            self.batch = 0
+
+        actualbatchsize = min([batchsize, length - startindex])
+
+        batch_phot_loginvvar = np.where(
+            batch_phot_invvar == 0, 0, np.log(batch_phot_invvar)
+        )
+
+        return (
+            startindex,
+            actualbatchsize,
+            batch_phot,
+            batch_phot_invvar,
+            batch_phot_loginvvar,
+            batch_redshifts,
+            self.transferfunctions,
+            batch_interprightindices_transfer,
+            batch_interpweights_transfer,
         )
 
     def get_nbatches(self, indices, batchsize):
@@ -574,10 +653,12 @@ def load_fits_templates(
                 temp.flux[i, :],
                 kind="linear",
                 bounds_error=bounds_error,
-                fill_value=0,
+                fill_value="extrapolate",
                 assume_sorted=True,
             )(xnew)
             off += 1
+
+    y_interp -= y_interp.mean(axis=1)[:, None]
 
     return y_interp
 

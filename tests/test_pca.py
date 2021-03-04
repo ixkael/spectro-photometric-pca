@@ -11,6 +11,145 @@ from chex import assert_shape
 key = jax.random.PRNGKey(42)
 
 
+def test_bayesianpca_photonly():
+
+    n_obj, n_pix_sed, n_pix_spec, n_pix_phot, n_pix_transfer = 122, 100, 47, 5, 50
+    dataPipeline = DataPipeline.save_fake_data(
+        n_obj, n_pix_sed, n_pix_spec, n_pix_phot, n_pix_transfer
+    )
+    dataPipeline = DataPipeline("data/fake/fake_", phot=True, spec=False)
+
+    prefix, suffix = "data/fake/fake_", ""
+    n_components, n_poly = 4, 3
+    polynomials_spec = chebychevPolynomials(n_poly, n_pix_spec)
+    pcamodel = PCAModel(polynomials_spec, prefix, suffix)
+
+    regularization = 1e-3
+
+    for opt_basis in [False, True]:
+        for opt_priors in [False, True]:
+            if not opt_priors and not opt_basis:
+                continue
+
+            print("Opt_basis:", opt_basis)
+            print("Opt prior:", opt_priors)
+
+            bayesianpca = jit(bayesianpca_photonly, static_argnums=(3, 4, 5))
+            loss_fn = jit(loss_photonly, static_argnums=(3, 4, 5, 6))
+
+            pcacomponents_prior = pcamodel.init_params(
+                key,
+                n_components,
+                n_poly,
+                n_pix_sed,
+                opt_basis,
+                opt_priors,
+            )
+            pcacomponents_init = 1 * pcamodel.pcacomponents
+            params = pcamodel.get_params_opt()
+            pcamodel.set_params(params)
+
+            batchsize = 20
+            indices = dataPipeline.indices
+            data_batch = dataPipeline.next_batch_photonly(indices, batchsize)
+
+            if opt_basis and opt_priors:
+                data_aux = pcacomponents_init
+                components = params[0]
+                priors = params[1]
+            if opt_basis and not opt_priors:
+                components = params[0]
+                priors = pcamodel.get_params_nonopt()[0]
+                data_aux = (priors, pcacomponents_init)
+            if not opt_basis and opt_priors:
+                components = pcamodel.get_params_nonopt()[0]
+                data_aux = (components, pcacomponents_init)
+                priors = params
+            print("components.shape", components.shape)
+
+            result = bayesianpca(
+                params,
+                data_batch,
+                data_aux,
+                n_components,
+                opt_basis,
+                opt_priors,
+            )
+
+            lossval = loss_fn(
+                params,
+                data_batch,
+                data_aux,
+                n_components,
+                opt_basis,
+                opt_priors,
+                regularization,
+            )
+            assert np.all((np.isfinite(lossval)))
+
+            (
+                logfml,
+                thetamap,
+                thetastd,
+                photmod_map,
+            ) = result
+            assert_shape(thetamap, (batchsize, n_components))
+            assert_shape(thetastd, (batchsize, n_components))
+            assert_shape(photmod_map, (batchsize, n_pix_phot))
+
+            opt_init, opt_update, get_params_opt = jax.experimental.optimizers.adam(
+                1e-3
+            )
+            opt_state = opt_init(params)
+
+            @partial(jit, static_argnums=(4, 5, 6, 7))
+            def update(
+                step,
+                opt_state,
+                data_batch,
+                data_aux,
+                n_components,
+                opt_basis,
+                opt_priors,
+                regularization,
+            ):
+                params = get_params_opt(opt_state)
+                value, grads = jax.value_and_grad(loss_fn)(
+                    params,
+                    data_batch,
+                    data_aux,
+                    n_components,
+                    opt_basis,
+                    opt_priors,
+                    regularization,
+                )
+                opt_state = opt_update(step, grads, opt_state)
+                return value, opt_state
+
+            nbatches = dataPipeline.get_nbatches(dataPipeline.indices, batchsize)
+            n_epoch = 3
+            itercount = itertools.count()
+            for i in range(n_epoch):
+                neworder = jax.random.permutation(key, dataPipeline.indices.size)
+                train_indices_reordered = np.take(dataPipeline.indices, neworder)
+                dataPipeline.batch = 0  # reset batch number
+                for j in range(nbatches):
+                    data_batch = dataPipeline.next_batch_photonly(
+                        train_indices_reordered, batchsize
+                    )
+                    loss, opt_state = update(
+                        next(itercount),
+                        opt_state,
+                        data_batch,
+                        data_aux,
+                        n_components,
+                        opt_basis,
+                        opt_priors,
+                        regularization,
+                    )
+                    assert np.all(np.isfinite(loss.block_until_ready()))
+
+
 def test_chebychevPolynomials():
     n_poly, n_pix_spec = 3, 100
     res = chebychevPolynomials(n_poly, n_pix_spec)
@@ -46,6 +185,8 @@ def test_bayesianpca_spec_and_specandphot():
     polynomials_spec = chebychevPolynomials(n_poly, n_pix_spec)
     pcamodel = PCAModel(polynomials_spec, prefix, suffix)
 
+    regularization = 1e-3
+
     for opt_basis in [False, True]:
         for opt_priors in [False, True]:
             if not opt_priors and not opt_basis:
@@ -59,35 +200,41 @@ def test_bayesianpca_spec_and_specandphot():
 
                 if speconly:
                     bayesianpca = jit(bayesianpca_speconly, static_argnums=(3, 4, 5, 6))
-                    loss_fn = jit(loss_speconly, static_argnums=(3, 4, 5, 6))
+                    loss_fn = jit(loss_speconly, static_argnums=(3, 4, 5, 6, 7))
                 else:
                     bayesianpca = jit(
                         bayesianpca_specandphot, static_argnums=(3, 4, 5, 6)
                     )
-                    loss_fn = jit(loss_specandphot, static_argnums=(3, 4, 5, 6))
+                    loss_fn = jit(loss_specandphot, static_argnums=(3, 4, 5, 6, 7))
 
                 pcacomponents_prior = pcamodel.init_params(
-                    key, n_components, n_poly, n_pix_sed, opt_basis, opt_priors
+                    key,
+                    n_components,
+                    n_poly,
+                    n_pix_sed,
+                    opt_basis,
+                    opt_priors,
                 )
+                pcacomponents_init = 1 * pcamodel.pcacomponents
                 params = pcamodel.get_params_opt()
                 print("params", params)
                 pcamodel.set_params(params)
 
                 batchsize = 20
                 indices = dataPipeline.indices
-                data_batch = dataPipeline.next_batch(indices, batchsize)
+                data_batch = dataPipeline.next_batch_specandphot(indices, batchsize)
 
                 if opt_basis and opt_priors:
-                    data_aux = polynomials_spec
+                    data_aux = (polynomials_spec, pcacomponents_init)
                     components = params[0]
                     priors = [params[1], params[2], params[3]]
                 if opt_basis and not opt_priors:
                     components = params[0]
                     priors = pcamodel.get_params_nonopt()
-                    data_aux = (priors, polynomials_spec)
+                    data_aux = (priors, polynomials_spec, pcacomponents_init)
                 if not opt_basis and opt_priors:
                     components = pcamodel.get_params_nonopt()[0]
-                    data_aux = (components, polynomials_spec)
+                    data_aux = (components, polynomials_spec, pcacomponents_init)
                     priors = params
 
                 result = bayesianpca(
@@ -108,6 +255,7 @@ def test_bayesianpca_spec_and_specandphot():
                     n_pix_spec,
                     opt_basis,
                     opt_priors,
+                    regularization,
                 )
                 assert np.all((np.isfinite(lossval)))
 
@@ -130,7 +278,7 @@ def test_bayesianpca_spec_and_specandphot():
                 )
                 opt_state = opt_init(params)
 
-                @partial(jit, static_argnums=(4, 5, 6, 7))
+                @partial(jit, static_argnums=(4, 5, 6, 7, 8))
                 def update(
                     step,
                     opt_state,
@@ -140,6 +288,7 @@ def test_bayesianpca_spec_and_specandphot():
                     n_pix_spec,
                     opt_basis,
                     opt_priors,
+                    regularization,
                 ):
                     params = get_params_opt(opt_state)
                     value, grads = jax.value_and_grad(loss_fn)(
@@ -150,6 +299,7 @@ def test_bayesianpca_spec_and_specandphot():
                         n_pix_spec,
                         opt_basis,
                         opt_priors,
+                        regularization,
                     )
                     opt_state = opt_update(step, grads, opt_state)
                     return value, opt_state
@@ -162,7 +312,7 @@ def test_bayesianpca_spec_and_specandphot():
                     train_indices_reordered = np.take(dataPipeline.indices, neworder)
                     dataPipeline.batch = 0  # reset batch number
                     for j in range(nbatches):
-                        data_batch = dataPipeline.next_batch(
+                        data_batch = dataPipeline.next_batch_specandphot(
                             train_indices_reordered, batchsize
                         )
                         loss, opt_state = update(
@@ -174,6 +324,7 @@ def test_bayesianpca_spec_and_specandphot():
                             n_pix_spec,
                             opt_basis,
                             opt_priors,
+                            regularization,
                         )
                         assert np.all(np.isfinite(loss.block_until_ready()))
 

@@ -203,7 +203,18 @@ def loss_speconly(
     n_pix_spec,
     opt_basis,
     opt_priors,
+    regularization,
 ):
+    if opt_basis and opt_priors:
+        pcacomponents = params[0]
+        pcacomponents_init = data_aux[1]
+    if opt_basis and not opt_priors:
+        pcacomponents = params[0]
+        pcacomponents_init = data_aux[2]
+    if not opt_basis and opt_priors:
+        pcacomponents = data_aux[0]
+        pcacomponents_init = data_aux[2]
+    pcacomponents -= pcacomponents.mean(axis=1)[:, None]
     (logfml, _, _, _, _, _) = bayesianpca_speconly(
         params,
         data_batch,
@@ -213,7 +224,8 @@ def loss_speconly(
         opt_basis,
         opt_priors,
     )
-    return -np.sum(logfml)
+    diff = pcacomponents - pcacomponents_init
+    return -np.sum(logfml) + np.sum(np.abs(diff)) * regularization
 
 
 def loss_specandphot(
@@ -224,7 +236,18 @@ def loss_specandphot(
     n_pix_spec,
     opt_basis,
     opt_priors,
+    regularization,
 ):
+    if opt_basis and opt_priors:
+        pcacomponents = params[0]
+        pcacomponents_init = data_aux[1]
+    if opt_basis and not opt_priors:
+        pcacomponents = params[0]
+        pcacomponents_init = data_aux[2]
+    if not opt_basis and opt_priors:
+        pcacomponents = data_aux[0]
+        pcacomponents_init = data_aux[2]
+    pcacomponents -= pcacomponents.mean(axis=1)[:, None]
     (logfml, _, _, _, _, _) = bayesianpca_specandphot(
         params,
         data_batch,
@@ -234,7 +257,38 @@ def loss_specandphot(
         opt_basis,
         opt_priors,
     )
-    return -np.sum(logfml)
+    diff = pcacomponents - pcacomponents_init
+    return -np.sum(logfml) + np.sum(np.abs(diff)) * regularization
+
+
+def loss_photonly(
+    params,
+    data_batch,
+    data_aux,
+    n_components,
+    opt_basis,
+    opt_priors,
+    regularization,
+):
+    (logfml, _, _, _) = bayesianpca_photonly(
+        params,
+        data_batch,
+        data_aux,
+        n_components,
+        opt_basis,
+        opt_priors,
+    )
+    if opt_basis and opt_priors:
+        pcacomponents = params[0]
+        pcacomponents_init = data_aux[0]
+    if opt_basis and not opt_priors:
+        pcacomponents = params[0]
+        pcacomponents_init = data_aux[1]
+    if not opt_basis and opt_priors:
+        pcacomponents = data_aux[0]
+        pcacomponents_init = data_aux[1]
+    diff = pcacomponents - pcacomponents_init
+    return -np.sum(logfml) - np.sum(diff ** 2) * regularization
 
 
 def bayesianpca_speconly(
@@ -248,14 +302,14 @@ def bayesianpca_speconly(
 ):
 
     if opt_basis and opt_priors:
-        polynomials_spec = data_aux
+        polynomials_spec = data_aux[0]
         pcacomponents_speconly = params[0]
         priors_speconly = [params[1], params[2], params[3]]
     if opt_basis and not opt_priors:
-        priors_speconly, polynomials_spec = data_aux
+        priors_speconly, polynomials_spec = data_aux[0], data_aux[1]
         pcacomponents_speconly = params[0]
     if not opt_basis and opt_priors:
-        pcacomponents_speconly, polynomials_spec = data_aux
+        pcacomponents_speconly, polynomials_spec = data_aux[0], data_aux[1]
         priors_speconly = params
 
     (
@@ -358,14 +412,14 @@ def bayesianpca_specandphot(
 ):
 
     if opt_basis and opt_priors:
-        polynomials_spec = data_aux
+        polynomials_spec = data_aux[0]
         pcacomponents_specandphot = params[0]
         priors_specandphot = [params[1], params[2], params[3]]
     if opt_basis and not opt_priors:
-        priors_specandphot, polynomials_spec = data_aux
+        priors_specandphot, polynomials_spec = data_aux[0], data_aux[1]
         pcacomponents_specandphot = params[0]
     if not opt_basis and opt_priors:
-        pcacomponents_specandphot, polynomials_spec = data_aux
+        pcacomponents_specandphot, polynomials_spec = data_aux[0], data_aux[1]
         priors_specandphot = params
 
     (
@@ -473,6 +527,86 @@ def bayesianpca_specandphot(
         specmod_map_specandphot,
         photmod_map_specandphot,
         np.ravel(ellfactors),
+    )
+
+
+def bayesianpca_photonly(
+    params,
+    data_batch,
+    data_aux,
+    n_components,
+    opt_basis,
+    opt_priors,
+):
+
+    if opt_basis and opt_priors:
+        pcacomponents_photonly = params[0]
+        components_prior_params_photonly = params[1]
+    if opt_basis and not opt_priors:
+        components_prior_params_photonly = data_aux[0]
+        pcacomponents_photonly = params[0]
+    if not opt_basis and opt_priors:
+        pcacomponents_photonly = data_aux[0]
+        components_prior_params_photonly = params[0]
+
+    (
+        si,
+        bs,
+        phot,
+        phot_invvar,
+        phot_loginvvar,
+        batch_redshifts,
+        transferfunctions,
+        batch_interprightindices_transfer,
+        batch_interpweights_transfer,
+    ) = data_batch
+
+    components_phot_photonly = np.sum(
+        pcacomponents_photonly[None, :, :, None] * transferfunctions[:, None, :, :],
+        axis=2,
+    )  # [n_z_transfer, n_components, n_phot]
+
+    components_phot_photonly_obj = np.take(
+        components_phot_photonly, batch_interprightindices_transfer, axis=0
+    )
+    components_phot_photonly_atz = (
+        batch_interpweights_transfer[:, None, None] * components_phot_photonly_obj
+        + (1 - batch_interpweights_transfer[:, None, None])
+        * components_phot_photonly_obj
+    )
+
+    components_prior_mean_photonly = PriorModel.get_mean_at_z(
+        components_prior_params_photonly, batch_redshifts
+    )
+    components_prior_loginvvar_photonly = PriorModel.get_loginvvar_at_z(
+        components_prior_params_photonly, batch_redshifts
+    )
+    components_prior_invvar_photonly = np.exp(components_prior_loginvvar_photonly)
+    (
+        logfml_photonly,
+        thetamap_photonly,
+        theta_cov_photonly,
+    ) = logmarglike_lineargaussianmodel_twotransfers_jitvmap(
+        components_phot_photonly_atz,  # [n_obj, n_components, nphot]
+        phot,  # [n_obj, nphot]
+        phot_invvar,  # [n_obj, nphot]
+        phot_loginvvar,  # [n_obj, nphot]
+        components_prior_mean_photonly,
+        components_prior_invvar_photonly,
+        components_prior_loginvvar_photonly,
+    )
+    # ellfactors = np.ones_like(batch_redshifts)
+    photmod_map_photonly = np.sum(
+        components_phot_photonly_atz * thetamap_photonly[:, :, None],
+        axis=1,
+    )
+    thetastd_photonly = np.diagonal(theta_cov_photonly, axis1=1, axis2=2) ** 0.5
+
+    return (
+        logfml_photonly,
+        thetamap_photonly,
+        thetastd_photonly,
+        photmod_map_photonly,
     )
 
 
