@@ -214,7 +214,7 @@ def loss_speconly(
     if not opt_basis and opt_priors:
         pcacomponents = data_aux[0]
         pcacomponents_init = data_aux[2]
-    pcacomponents -= pcacomponents.mean(axis=1)[:, None]
+    # pcacomponents -= pcacomponents.mean(axis=1)[:, None]
     (logfml, _, _, _, _, _) = bayesianpca_speconly(
         params,
         data_batch,
@@ -247,7 +247,7 @@ def loss_specandphot(
     if not opt_basis and opt_priors:
         pcacomponents = data_aux[0]
         pcacomponents_init = data_aux[2]
-    pcacomponents -= pcacomponents.mean(axis=1)[:, None]
+    # pcacomponents -= pcacomponents.mean(axis=1)[:, None]
     (logfml, _, _, _, _, _) = bayesianpca_specandphot(
         params,
         data_batch,
@@ -258,7 +258,7 @@ def loss_specandphot(
         opt_priors,
     )
     diff = pcacomponents - pcacomponents_init
-    return -np.sum(logfml) + np.sum(np.abs(diff)) * regularization
+    return -np.sum(logfml)  # + np.sum(diff ** 2) * regularization
 
 
 def loss_photonly(
@@ -266,6 +266,7 @@ def loss_photonly(
     data_batch,
     data_aux,
     n_components,
+    n_pix_spec,
     opt_basis,
     opt_priors,
     regularization,
@@ -275,6 +276,7 @@ def loss_photonly(
         data_batch,
         data_aux,
         n_components,
+        n_pix_spec,
         opt_basis,
         opt_priors,
     )
@@ -288,7 +290,7 @@ def loss_photonly(
         pcacomponents = data_aux[0]
         pcacomponents_init = data_aux[1]
     diff = pcacomponents - pcacomponents_init
-    return -np.sum(logfml) - np.sum(diff ** 2) * regularization
+    return -np.sum(logfml)  # + np.sum(diff ** 2) * regularization
 
 
 def bayesianpca_speconly(
@@ -535,6 +537,7 @@ def bayesianpca_photonly(
     data_batch,
     data_aux,
     n_components,
+    n_pix_spec,
     opt_basis,
     opt_priors,
 ):

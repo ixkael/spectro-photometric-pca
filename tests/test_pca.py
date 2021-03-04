@@ -34,8 +34,8 @@ def test_bayesianpca_photonly():
             print("Opt_basis:", opt_basis)
             print("Opt prior:", opt_priors)
 
-            bayesianpca = jit(bayesianpca_photonly, static_argnums=(3, 4, 5))
-            loss_fn = jit(loss_photonly, static_argnums=(3, 4, 5, 6))
+            bayesianpca = jit(bayesianpca_photonly, static_argnums=(3, 4, 5, 6))
+            loss_fn = jit(loss_photonly, static_argnums=(3, 4, 5, 6, 7))
 
             pcacomponents_prior = pcamodel.init_params(
                 key,
@@ -72,6 +72,7 @@ def test_bayesianpca_photonly():
                 data_batch,
                 data_aux,
                 n_components,
+                n_pix_sed,
                 opt_basis,
                 opt_priors,
             )
@@ -81,6 +82,7 @@ def test_bayesianpca_photonly():
                 data_batch,
                 data_aux,
                 n_components,
+                n_pix_sed,
                 opt_basis,
                 opt_priors,
                 regularization,
@@ -102,13 +104,14 @@ def test_bayesianpca_photonly():
             )
             opt_state = opt_init(params)
 
-            @partial(jit, static_argnums=(4, 5, 6, 7))
+            @partial(jit, static_argnums=(4, 5, 6, 7, 8))
             def update(
                 step,
                 opt_state,
                 data_batch,
                 data_aux,
                 n_components,
+                n_pix_sed,
                 opt_basis,
                 opt_priors,
                 regularization,
@@ -119,6 +122,7 @@ def test_bayesianpca_photonly():
                     data_batch,
                     data_aux,
                     n_components,
+                    n_pix_sed,
                     opt_basis,
                     opt_priors,
                     regularization,
@@ -143,6 +147,7 @@ def test_bayesianpca_photonly():
                         data_batch,
                         data_aux,
                         n_components,
+                        n_pix_sed,
                         opt_basis,
                         opt_priors,
                         regularization,
