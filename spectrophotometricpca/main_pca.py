@@ -72,7 +72,7 @@ from utils import *
 )
 @click.option(
     "--n_epochs",
-    default=200,
+    default=1001,
     show_default=True,
     type=int,
     help="Number of epochs",
@@ -93,21 +93,21 @@ from utils import *
 )
 @click.option(
     "--subsampling",
-    default=1,
+    default=2,
     show_default=True,
     type=int,
     help="Subsampling of spectra and SEDs",
 )
 @click.option(
     "--learningrate",
-    default=1e-2,
+    default=1e-4,
     show_default=True,
     type=float,
     help="Learning rate for optimisation",
 )
 @click.option(
     "--n_poly",
-    default=3,
+    default=2,
     show_default=True,
     type=int,
     help="Number of chebychev polynomials for spectroscopic systematics",
@@ -121,7 +121,7 @@ from utils import *
 )
 @click.option(
     "--opt_basis",
-    default=False,
+    default=True,
     show_default=True,
     type=bool,
     help="Optimize basis functions",
@@ -132,6 +132,13 @@ from utils import *
     show_default=True,
     type=bool,
     help="Optimize priors",
+)
+@click.option(
+    "--regularization",
+    default=1e-2,
+    show_default=True,
+    type=float,
+    help="Regularization strength",
 )
 # flag.DEFINE_boolean("load", False, "Loading existing model")
 # flag.DEFINE_integer("alldata", 0, "")
@@ -149,6 +156,7 @@ def main(
     speconly,
     opt_basis,
     opt_priors,
+    regularization,
 ):
     output_valid_zsteps = n_epochs - 1
     compute_redshifts_pdfs = True
@@ -225,7 +233,8 @@ def main(
     )
 
     # Load PCA templates
-    pcamodel.pcacomponents = load_fits_templates(lamgrid, n_components)
+    pcacomponents_init = load_fits_templates(lamgrid, n_components)
+    pcamodel.pcacomponents = 1 * pcacomponents_init
 
     print("n_components, n_pix_spec", n_components, n_pix_spec)
 
@@ -240,24 +249,24 @@ def main(
         bayesianpca = jit(
             bayesianpca_speconly, backend="gpu", static_argnums=(3, 4, 5, 6)
         )
-        loss_fn = jit(loss_speconly, backend="gpu", static_argnums=(3, 4, 5, 6))
+        loss_fn = jit(loss_speconly, backend="gpu", static_argnums=(3, 4, 5, 6, 7))
     else:
         suffix_orig = "_specandphot"
         bayesianpca = jit(
             bayesianpca_specandphot, backend="gpu", static_argnums=(3, 4, 5, 6)
         )
-        loss_fn = jit(loss_specandphot, backend="gpu", static_argnums=(3, 4, 5, 6))
+        loss_fn = jit(loss_specandphot, backend="gpu", static_argnums=(3, 4, 5, 6, 7))
 
     if opt_basis and opt_priors:
-        data_aux = polynomials_spec
+        data_aux = (polynomials_spec, pcacomponents_init)
     if opt_basis and not opt_priors:
         priors = pcamodel.get_params_nonopt()
-        data_aux = (priors, polynomials_spec)
+        data_aux = (priors, polynomials_spec, pcacomponents_init)
     if not opt_basis and opt_priors:
         components = pcamodel.get_params_nonopt()[0]
-        data_aux = (components, polynomials_spec)
+        data_aux = (components, polynomials_spec, pcacomponents_init)
 
-    @partial(jit, backend="gpu", static_argnums=(4, 5, 6, 7))
+    @partial(jit, backend="gpu", static_argnums=(4, 5, 6, 7, 8))
     def update(
         step,
         opt_state,
@@ -267,6 +276,7 @@ def main(
         n_pix_spec,
         opt_basis,
         opt_priors,
+        regularization,
     ):
         params = get_params_opt(opt_state)
         value, grads = jax.value_and_grad(loss_fn)(
@@ -277,6 +287,7 @@ def main(
             n_pix_spec,
             opt_basis,
             opt_priors,
+            regularization,
         )
         opt_state = opt_update(step, grads, opt_state)
         return value, opt_state
@@ -309,7 +320,7 @@ def main(
             datapipe.batch = 0  # reset batch number
             valid_start_time = time.time()
             for j in range(numBatches_valid):
-                data_batch = datapipe.next_batch(indices_valid, batchsize)
+                data_batch = datapipe.next_batch_specandphot(indices_valid, batchsize)
 
                 result = bayesianpca(
                     pcamodel.get_params_opt(),
@@ -375,7 +386,9 @@ def main(
                 )
 
                 for j in range(numBatches_valid):
-                    data_batch = datapipe.next_batch(indices_valid, batchsize)
+                    data_batch = datapipe.next_batch_specandphot(
+                        indices_valid, batchsize
+                    )
                     si, bs = data_batch[0], data_batch[1]
 
                     print("> Batch", j + 1, "out of", numBatches_valid)
@@ -427,7 +440,9 @@ def main(
         indices_train_reordered = np.take(indices_train, neworder)
         datapipe.batch = 0  # reset batch number
         for j in range(numBatches_train):
-            data_batch = datapipe.next_batch(indices_train_reordered, batchsize)
+            data_batch = datapipe.next_batch_specandphot(
+                indices_train_reordered, batchsize
+            )
             the_loss, opt_state = update(
                 next(itercount),
                 opt_state,
@@ -437,6 +452,7 @@ def main(
                 n_pix_spec,
                 opt_basis,
                 opt_priors,
+                regularization,
             )
             # logfml, thetamap, thetastd, specmod_map, photmod_map = bayesianpca(
             #    params, data_batch, polynomials_spec
