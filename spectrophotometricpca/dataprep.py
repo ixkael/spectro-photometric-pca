@@ -11,6 +11,8 @@ from time import time
 from gasp.photometry import mag2flux_witherr
 import os
 
+from .datapipeline import interp_coefficients
+
 
 def form_filename(root, meta):
     """
@@ -461,14 +463,14 @@ def save_spectrophotometry(
     flux_ivars,
     processed_interprightindices,
     processed_interpweights,
+    processed_interprightindices_transfer,
+    processed_interpweights_transfer,
 ):
 
     np.save(root + "chi2s_sdss", chi2s_sdss)
     # np.save(root + "valid_ids", processed_indices)
     np.save(root + "redshifts", processed_redshifts)
     np.save(root + "lamspec_waveoffset", lamspec_waveoffset)
-    np.save(root + "interprightindices", processed_interprightindices)
-    np.save(root + "interpweights", processed_interpweights)
     np.save(root + "index_wave", processed_index_wave)
     np.save(root + "index_transfer_redshift", processed_index_transfer_redshift)
     np.save(root + "lamgrid", wave_rest_interp)
@@ -476,10 +478,14 @@ def save_spectrophotometry(
     np.save(root + "lam_phot_size_eff", lam_phot_size_eff)
     np.save(root + "transferfunctions", transfermatrix_phot)
     np.save(root + "transferfunctions_zgrid", transfer_redshift_grid)
+    np.save(root + "interprightindices_transfer", processed_interprightindices_transfer)
+    np.save(root + "interpweights_transfer", processed_interpweights_transfer)
     print("saved transferfunctions")
     np.save(root + "spec", processed_spec)
     np.save(root + "spec_mod", processed_spec_off)
     np.save(root + "spec_invvar", processed_spec_ivar)
+    np.save(root + "interprightindices", processed_interprightindices)
+    np.save(root + "interpweights", processed_interpweights)
     print("saved seds")
     np.save(root + "phot", fluxes)
     np.save(root + "phot_invvar", flux_ivars)
