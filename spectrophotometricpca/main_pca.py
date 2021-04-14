@@ -6,7 +6,7 @@ import click
 import itertools
 
 os.environ["TF_XLA_FLAGS"] = "--tf_xla_auto_jit=2 --tf_xla_cpu_global_jit"
-os.environ["XLA_FLAGS"] = "--xla_gpu_cuda_data_dir=/usr/lib/cuda"
+os.environ["XLA_FLAGS"] = "--xla_gpu_cuda_data_dir=/usr/local/cuda-11.2"
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"  # no reason not to preallocate!
 
 
@@ -55,7 +55,9 @@ from utils import *
 
 
 @click.command()
-@click.argument("input_dir", type=click.Path(exists=True), default="data/dr16eboss")
+@click.argument(
+    "input_dir", type=click.Path(exists=True), default="data/dr16eboss_mock"
+)
 # @click.option("--input_dir", required=True, type=str, help="Root directory of data set")
 @click.option(
     "--dataname",
@@ -72,7 +74,7 @@ from utils import *
 )
 @click.option(
     "--n_epochs",
-    default=1001,
+    default=101,
     show_default=True,
     type=int,
     help="Number of epochs",
@@ -93,21 +95,21 @@ from utils import *
 )
 @click.option(
     "--subsampling",
-    default=2,
+    default=1,
     show_default=True,
     type=int,
     help="Subsampling of spectra and SEDs",
 )
 @click.option(
     "--learningrate",
-    default=1e-4,
+    default=1e-4,  # greater than 1e-2 never works.
     show_default=True,
     type=float,
     help="Learning rate for optimisation",
 )
 @click.option(
     "--n_poly",
-    default=2,
+    default=1,
     show_default=True,
     type=int,
     help="Number of chebychev polynomials for spectroscopic systematics",
@@ -249,13 +251,33 @@ def main(
         bayesianpca = jit(
             bayesianpca_speconly, backend="gpu", static_argnums=(3, 4, 5, 6)
         )
-        loss_fn = jit(loss_speconly, backend="gpu", static_argnums=(3, 4, 5, 6, 7))
     else:
         suffix_orig = "_specandphot"
         bayesianpca = jit(
             bayesianpca_specandphot, backend="gpu", static_argnums=(3, 4, 5, 6)
         )
-        loss_fn = jit(loss_specandphot, backend="gpu", static_argnums=(3, 4, 5, 6, 7))
+
+    @partial(jit, backend="gpu", static_argnums=(3, 4, 5, 6, 7))
+    def loss_fn(
+        params,
+        data_batch,
+        data_aux,
+        n_components,
+        n_pix_spec,
+        opt_basis,
+        opt_priors,
+        regularization,
+    ):
+        (logfml, _, _, _, _, _) = bayesianpca(
+            params,
+            data_batch,
+            data_aux,
+            n_components,
+            n_pix_spec,
+            opt_basis,
+            opt_priors,
+        )
+        return -np.sum(logfml)
 
     if opt_basis and opt_priors:
         data_aux = (polynomials_spec, pcacomponents_init)
@@ -290,6 +312,15 @@ def main(
             regularization,
         )
         opt_state = opt_update(step, grads, opt_state)
+        if opt_basis:
+            pcacomponents = opt_state[0][0][0]
+            if opt_priors:
+                pcacomponents_init = data_aux[1]
+            if not opt_priors:
+                pcacomponents_init = data_aux[2]
+            # norms = np.sum(pcacomponents ** 2, axis=1)
+            # norms_init = np.sum(pcacomponents_init ** 2, axis=1)
+            # opt_state[0][0][0] *= (norms_init / norms)[:, None]
         return value, opt_state
 
     # Start loop
@@ -465,6 +496,12 @@ def main(
             # updated_batch_ells[updated_batch_ells < 0] = 1.0
             # train_specphotscaling[neworder[si : si + bs]] = updated_batch_ells
 
+        params = get_params_opt(opt_state)
+        pcacomponents = params[0]
+        constraints = np.sum(pcacomponents ** 2, axis=1) / np.sum(
+            pcacomponents_init ** 2, axis=1
+        )
+        # print("Constraints", constraints)
         loss = onp.mean(losses_train[i, :])
         pcamodel.set_params(get_params_opt(opt_state))  # get updated parameter array
         xla._xla_callable.cache_clear()
