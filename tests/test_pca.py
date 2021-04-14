@@ -37,7 +37,39 @@ def test_bayesianpca_photonly():
             print("Opt prior:", opt_priors)
 
             bayesianpca = jit(bayesianpca_photonly, static_argnums=(3, 4, 5))
-            loss_fn = jit(loss_pca_photonly, static_argnums=(3, 4, 5, 6))
+
+            @partial(jit, static_argnums=(3, 4, 5, 6))
+            def loss_fn(
+                params,
+                data_batch,
+                data_aux,
+                n_components,
+                n_pix_spec,
+                opt_basis,
+                opt_priors,
+                regularization,
+            ):
+                if opt_basis and opt_priors:
+                    pcacomponents = params[0]
+                    pcacomponents_init = data_aux[1]
+                if opt_basis and not opt_priors:
+                    pcacomponents = params[0]
+                    pcacomponents_init = data_aux[2]
+                if not opt_basis and opt_priors:
+                    pcacomponents = data_aux[0]
+                    pcacomponents_init = data_aux[2]
+                # pcacomponents -= pcacomponents.mean(axis=1)[:, None]
+                (logfml, _, _, _, _, _) = bayesianpca(
+                    params,
+                    data_batch,
+                    data_aux,
+                    n_components,
+                    n_pix_spec,
+                    opt_basis,
+                    opt_priors,
+                )
+                diff = pcacomponents - pcacomponents_init
+                return -np.sum(logfml)  # + np.sum(diff ** 2) * regularization
 
             pcacomponents_prior = pcamodel.init_params(
                 key,
@@ -202,12 +234,43 @@ def test_bayesianpca_spec_and_specandphot():
 
                 if speconly:
                     bayesianpca = jit(bayesianpca_speconly, static_argnums=(3, 4, 5, 6))
-                    loss_fn = jit(loss_pca_speconly, static_argnums=(3, 4, 5, 6, 7))
                 else:
                     bayesianpca = jit(
                         bayesianpca_specandphot, static_argnums=(3, 4, 5, 6)
                     )
-                    loss_fn = jit(loss_pca_specandphot, static_argnums=(3, 4, 5, 6, 7))
+
+                @partial(jit, static_argnums=(3, 4, 5, 6, 7))
+                def loss_fn(
+                    params,
+                    data_batch,
+                    data_aux,
+                    n_components,
+                    n_pix_spec,
+                    opt_basis,
+                    opt_priors,
+                    regularization,
+                ):
+                    if opt_basis and opt_priors:
+                        pcacomponents = params[0]
+                        pcacomponents_init = data_aux[1]
+                    if opt_basis and not opt_priors:
+                        pcacomponents = params[0]
+                        pcacomponents_init = data_aux[2]
+                    if not opt_basis and opt_priors:
+                        pcacomponents = data_aux[0]
+                        pcacomponents_init = data_aux[2]
+                    # pcacomponents -= pcacomponents.mean(axis=1)[:, None]
+                    (logfml, _, _, _, _, _) = bayesianpca(
+                        params,
+                        data_batch,
+                        data_aux,
+                        n_components,
+                        n_pix_spec,
+                        opt_basis,
+                        opt_priors,
+                    )
+                    diff = pcacomponents - pcacomponents_init
+                    return -np.sum(logfml)  # + np.sum(diff ** 2) * regularization
 
                 pcacomponents_prior = pcamodel.init_params(
                     key,
