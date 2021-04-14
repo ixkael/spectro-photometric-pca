@@ -216,35 +216,42 @@ def loss_pca_photonly(
 
 @jit
 def bayesianpca_speconly_explicit(
-    components_spec,  # [n_obj, n_components, nspec]
+    components_spec,  # [n_obj, n_archetypes, n_components, nspec]
     polynomials_spec,  # [n_poly, nspec]
     spec,  # [n_obj, nspec]
     spec_invvar,  # [n_obj, nspec]
     spec_loginvvar,  # [n_obj, nspec]
-    components_prior_mean,  # [n_obj, n_components]
-    components_prior_loginvvar,  # [n_obj, n_components]
-    polynomials_prior_mean,  # [n_obj, n_components] or [n_poly]
-    polynomials_prior_loginvvar,  # [n_obj, n_components] or [n_poly]
+    components_prior_mean,  # [n_obj, n_archetypes, n_components]
+    components_prior_loginvvar,  # [n_obj, n_archetypes, n_components]
+    polynomials_prior_mean,  # [n_poly]
+    polynomials_prior_loginvvar,  # [n_poly]
 ):
 
-    n_obj, nspec = np.shape(spec)[0], np.shape(spec)[1]
-    n_components = np.shape(components_spec)[1]
+    n_obj, n_archetypes, n_components, nspec = np.shape(components_spec)
     n_poly = np.shape(polynomials_spec)[0]
 
     components_spec_all = np.concatenate(
-        [components_spec, polynomials_spec[None, :, :] * np.ones((n_obj, 1, nspec))],
+        [
+            components_spec,
+            polynomials_spec[None, None, :, :]
+            * np.ones((n_obj, n_archetypes, 1, nspec)),
+        ],
         axis=-2,
-    )  # [n_obj, n_components+n_poly, nspec]
+    )  # [n_obj, n_archetypes, n_components+n_poly, nspec]
 
     # if shape is [n_poly] instead of [n_obj, n_components]
     mu = np.concatenate(
-        [components_prior_mean, polynomials_prior_mean[None, :] * np.ones((n_obj, 1))],
+        [
+            components_prior_mean,
+            polynomials_prior_mean[None, None, :] * np.ones((n_obj, n_archetypes, 1)),
+        ],
         axis=-1,
     )
     logmuinvvar = np.concatenate(
         [
             components_prior_loginvvar,
-            polynomials_prior_loginvvar[None, :] * np.ones((n_obj, 1)),
+            polynomials_prior_loginvvar[None, None, :]
+            * np.ones((n_obj, n_archetypes, 1)),
         ],
         axis=-1,
     )
@@ -257,67 +264,77 @@ def bayesianpca_speconly_explicit(
         logfml,
         thetamap,
         theta_cov,
-    ) = logmarglike_lineargaussianmodel_twotransfers_jitvmap(
+    ) = logmarglike_lineargaussianmodel_twotransfers_jitvmapvmap(
         components_spec_all,
-        spec,
-        spec_invvar,
-        spec_loginvvar,
+        spec[:, None, :],
+        spec_invvar[:, None, :],
+        spec_loginvvar[:, None, :],
         mu,
         muinvvar,
         logmuinvvar,
     )
 
-    thetastd = np.diagonal(theta_cov, axis1=1, axis2=2) ** 0.5
+    thetastd = np.diagonal(theta_cov, axis1=1, axis2=-1) ** 0.5
 
     # Produce best fit models
-    specmod_map = np.sum(components_spec_all[:, :, :] * thetamap[:, :, None], axis=1)
+    specmod_map = np.sum(components_spec_all * thetamap[:, :, :, None], axis=-2)
     # chi2_spec = np.sum((specmod_map - spec) ** 2 * spec_invvar, axis=-1)
 
-    return (logfml, thetamap, thetastd, specmod_map)
+    return (
+        np.squeeze(logfml),
+        np.squeeze(thetamap),
+        np.squeeze(thetastd),
+        np.squeeze(specmod_map),
+    )
 
 
 @jit
 def bayesianpca_specandphot_explicit(
-    components_spec,  # [n_obj, n_components, nspec]
-    components_phot,  # [n_obj, n_components, nphot]
+    components_spec,  # [n_obj, n_archetypes, n_components, nspec]
+    components_phot,  # [n_obj, n_archetypes, n_components, nphot]
     polynomials_spec,  # [n_poly, nspec]
-    ellfactors,  # [n_obj, ]
+    ellfactors,  # [n_obj, n_archetypes]
     spec,  # [n_obj, nspec]
     spec_invvar,  # [n_obj, nspec]
     spec_loginvvar,  # [n_obj, nspec]
     phot,  # [n_obj, nphot]
     phot_invvar,  # [n_obj, nphot]
     phot_loginvvar,  # [n_obj, nphot]
-    components_prior_mean,  # [n_obj, n_components]
-    components_prior_loginvvar,  # [n_obj, n_components]
-    polynomials_prior_mean,  # [n_obj, n_components] or [n_poly]
-    polynomials_prior_loginvvar,  # [n_obj, n_components] or [n_poly]
+    components_prior_mean,  # [n_obj, n_archetypes, n_components]
+    components_prior_loginvvar,  # [n_obj, n_archetypes, n_components]
+    polynomials_prior_mean,  # [n_poly]
+    polynomials_prior_loginvvar,  # [n_poly]
 ):
 
-    n_obj, nspec = np.shape(spec)[0], np.shape(spec)[1]
-    n_components = np.shape(components_spec)[1]
+    n_obj, n_archetypes, n_components, nspec = np.shape(components_spec)
     n_poly = np.shape(polynomials_spec)[0]
     nphot = np.shape(phot)[1]
 
     components_spec_all = np.concatenate(
-        [components_spec, polynomials_spec[None, :, :] * np.ones((n_obj, 1, nspec))],
+        [
+            components_spec,
+            polynomials_spec[None, :, :] * np.ones((n_obj, n_archetypes, 1, nspec)),
+        ],
         axis=-2,
-    )  # [n_obj, n_components+n_poly, nspec]
+    )  # [n_obj, n_archetypes, n_components+n_poly, nspec]
 
-    zeros = np.zeros((n_obj, n_poly, nphot))
     components_phot_all = np.concatenate(
-        [components_phot, zeros], axis=1
-    )  # [n_obj, n_components+n_poly, nphot]
+        [components_phot, np.zeros((n_obj, n_archetypes, n_poly, nphot))], axis=2
+    )  # [n_obj,n_archetypes,  n_components+n_poly, nphot]
 
     # if shape is [n_poly] instead of [n_obj, n_components]
     mu = np.concatenate(
-        [components_prior_mean, polynomials_prior_mean[None, :] * np.ones((n_obj, 1))],
+        [
+            components_prior_mean,
+            polynomials_prior_mean[None, None, :] * np.ones((n_obj, n_archetypes, 1)),
+        ],
         axis=-1,
     )
     logmuinvvar = np.concatenate(
         [
             components_prior_loginvvar,
-            polynomials_prior_loginvvar[None, :] * np.ones((n_obj, 1)),
+            polynomials_prior_loginvvar[None, None, :]
+            * np.ones((n_obj, n_archetypes, 1)),
         ],
         axis=-1,
     )
@@ -330,16 +347,16 @@ def bayesianpca_specandphot_explicit(
         logfml,
         thetamap,
         theta_cov,
-    ) = logmarglike_lineargaussianmodel_threetransfers_jitvmap(
+    ) = logmarglike_lineargaussianmodel_threetransfers_jitvmapvmap(
         ellfactors,
         components_spec_all,
         components_phot_all,
-        spec,
-        spec_invvar,
-        spec_loginvvar,
-        phot,
-        phot_invvar,
-        phot_loginvvar,
+        spec[:, None, :],
+        spec_invvar[:, None, :],
+        spec_loginvvar[:, None, :],
+        phot[:, None, :],
+        phot_invvar[:, None, :],
+        phot_loginvvar[:, None, :],
         mu,
         muinvvar,
         logmuinvvar,
@@ -348,78 +365,16 @@ def bayesianpca_specandphot_explicit(
     thetastd = np.diagonal(theta_cov, axis1=1, axis2=2) ** 0.5
 
     # Produce best fit models
-    specmod_map = np.sum(components_spec_all[:, :, :] * thetamap[:, :, None], axis=1)
-    photmod_map = np.sum(components_phot_all[:, :, :] * thetamap[:, :, None], axis=1)
-    # chi2_spec = np.sum((specmod_map - spec) ** 2 * spec_invvar, axis=-1)
-    # chi2_phot = np.sum((photmod_map - phot) ** 2 * phot_invvar, axis=-1)
+    specmod_map = np.sum(components_spec_all * thetamap[:, :, :, None], axis=-2)
+    photmod_map = np.sum(components_phot_all * thetamap[:, :, :, None], axis=-2)
 
-    return (logfml, thetamap, thetastd, specmod_map, photmod_map)
-
-
-def loss_pca_speconly(
-    params,
-    data_batch,
-    data_aux,
-    n_components,
-    n_pix_spec,
-    opt_basis,
-    opt_priors,
-    regularization,
-):
-    if opt_basis and opt_priors:
-        pcacomponents = params[0]
-        pcacomponents_init = data_aux[1]
-    if opt_basis and not opt_priors:
-        pcacomponents = params[0]
-        pcacomponents_init = data_aux[2]
-    if not opt_basis and opt_priors:
-        pcacomponents = data_aux[0]
-        pcacomponents_init = data_aux[2]
-    # pcacomponents -= pcacomponents.mean(axis=1)[:, None]
-    (logfml, _, _, _, _, _) = bayesianpca_speconly(
-        params,
-        data_batch,
-        data_aux,
-        n_components,
-        n_pix_spec,
-        opt_basis,
-        opt_priors,
+    return (
+        np.squeeze(logfml),
+        np.squeeze(thetamap),
+        np.squeeze(thetastd),
+        np.squeeze(specmod_map),
+        np.squeeze(photmod_map),
     )
-    diff = pcacomponents - pcacomponents_init
-    return -np.sum(logfml)  # + np.sum(np.abs(diff)) * regularization
-
-
-def loss_pca_specandphot(
-    params,
-    data_batch,
-    data_aux,
-    n_components,
-    n_pix_spec,
-    opt_basis,
-    opt_priors,
-    regularization,
-):
-    if opt_basis and opt_priors:
-        pcacomponents = params[0]
-        pcacomponents_init = data_aux[1]
-    if opt_basis and not opt_priors:
-        pcacomponents = params[0]
-        pcacomponents_init = data_aux[2]
-    if not opt_basis and opt_priors:
-        pcacomponents = data_aux[0]
-        pcacomponents_init = data_aux[2]
-    # pcacomponents -= pcacomponents.mean(axis=1)[:, None]
-    (logfml, _, _, _, _, _) = bayesianpca_specandphot(
-        params,
-        data_batch,
-        data_aux,
-        n_components,
-        n_pix_spec,
-        opt_basis,
-        opt_priors,
-    )
-    diff = pcacomponents - pcacomponents_init
-    return -np.sum(logfml)  # + np.sum(diff ** 2) * regularization
 
 
 def bayesianpca_speconly(
@@ -505,20 +460,20 @@ def bayesianpca_speconly(
         thetastd_speconly,
         specmod_map_speconly,
     ) = bayesianpca_speconly_explicit(
-        pcacomponents_speconly_atz,  # [n_obj, n_components, nspec]
+        pcacomponents_speconly_atz[:, None, :, :],  # [n_obj, 1, n_components, nspec]
         polynomials_spec,  # [n_poly, nspec]
         spec,  # [n_obj, nspec]
         spec_invvar,  # [n_obj, nspec]
         spec_loginvvar,  # [n_obj, nspec]
-        components_prior_mean_speconly,  # [n_obj, n_components]
-        components_prior_loginvvar_speconly,  # [n_obj, n_components]
+        components_prior_mean_speconly[:, None, :],  # [n_obj, 1, n_components]
+        components_prior_loginvvar_speconly[:, None, :],  # [n_obj, 1, n_components]
         polynomials_prior_mean_speconly,
         polynomials_prior_loginvvar_speconly,
     )
     photmod_map_speconly = np.sum(
         components_phot_speconly[:, :, :] * thetamap_speconly[:, 0:n_components, None],
-        axis=1,
-    )
+        axis=-2,
+    )  # [n_obj, n_phot]
     _, ellfactors, _ = logmarglike_lineargaussianmodel_onetransfer_jitvmap(
         photmod_map_speconly[:, None, :], phot, phot_invvar, phot_loginvvar
     )
@@ -609,13 +564,13 @@ def bayesianpca_specandphot(
     # )
 
     (_, thetamap_speconly, _, _,) = bayesianpca_speconly_explicit(
-        pcacomponents_specandphot_atz,  # [n_obj, n_components, nspec]
+        pcacomponents_specandphot_atz[:, None, :, :],  # [n_obj, 1, n_components, nspec]
         polynomials_spec,  # [n_poly, nspec]
         spec,  # [n_obj, nspec]
         spec_invvar,  # [n_obj, nspec]
         spec_loginvvar,  # [n_obj, nspec]
-        components_prior_mean_specandphot,  # [n_obj, n_components]
-        components_prior_loginvvar_specandphot,  # [n_obj, n_components]
+        components_prior_mean_specandphot[:, None, :],  # [n_obj, 1, n_components]
+        components_prior_loginvvar_specandphot[:, None, :],  # [n_obj, 1, n_components]
         polynomials_prior_mean_specandphot,
         polynomials_prior_loginvvar_specandphot,
     )
@@ -623,7 +578,7 @@ def bayesianpca_specandphot(
     photmod_map_speconly = np.sum(
         components_phot_specandphot[:, :, :]
         * thetamap_speconly[:, 0:n_components, None],
-        axis=1,
+        axis=-2,
     )
     _, ellfactors, _ = logmarglike_lineargaussianmodel_onetransfer_jitvmap(
         photmod_map_speconly[:, None, :], phot, phot_invvar, phot_loginvvar
@@ -636,18 +591,18 @@ def bayesianpca_specandphot(
         specmod_map_specandphot,
         photmod_map_specandphot,
     ) = bayesianpca_specandphot_explicit(
-        pcacomponents_specandphot_atz,  # [n_obj, n_components, nspec]
-        components_phot_specandphot,  # [n_obj, n_components, nphot]
+        pcacomponents_specandphot_atz[:, None, :, :],  # [n_obj, 1, n_components, nspec]
+        components_phot_specandphot[:, None, :, :],  # [n_obj, 1, n_components, nphot]
         polynomials_spec,  # [n_poly, nspec]
-        ellfactors,  # [n_obj, ]
+        ellfactors[:, None],  # [n_obj, 1]
         spec,  # [n_obj, nspec]
         spec_invvar,  # [n_obj, nspec]
         spec_loginvvar,  # [n_obj, nspec]
         phot,  # [n_obj, nphot]
         phot_invvar,  # [n_obj, nphot]
         phot_loginvvar,  # [n_obj, nphot]
-        components_prior_mean_specandphot,  # [n_obj, n_components]
-        components_prior_loginvvar_specandphot,  # [n_obj, n_components]
+        components_prior_mean_specandphot[:, None, :],  # [n_obj, 1, n_components]
+        components_prior_loginvvar_specandphot[:, None, :],  # [n_obj, 1, n_components]
         polynomials_prior_mean_specandphot,
         polynomials_prior_loginvvar_specandphot,
     )
@@ -739,3 +694,117 @@ def bayesianpca_photonly(
         thetastd_photonly,
         photmod_map_photonly,
     )
+
+
+def loss_pca_speconly(
+    params,
+    data_batch,
+    data_aux,
+    n_components,
+    n_pix_spec,
+    opt_basis,
+    opt_priors,
+    regularization,
+):
+    if opt_basis and opt_priors:
+        pcacomponents = params[0]
+        pcacomponents_init = data_aux[1]
+    if opt_basis and not opt_priors:
+        pcacomponents = params[0]
+        pcacomponents_init = data_aux[2]
+    if not opt_basis and opt_priors:
+        pcacomponents = data_aux[0]
+        pcacomponents_init = data_aux[2]
+    # pcacomponents -= pcacomponents.mean(axis=1)[:, None]
+    (logfml, _, _, _, _, _) = bayesianpca_speconly(
+        params,
+        data_batch,
+        data_aux,
+        n_components,
+        n_pix_spec,
+        opt_basis,
+        opt_priors,
+    )
+    diff = pcacomponents - pcacomponents_init
+    return -np.sum(logfml)  # + np.sum(np.abs(diff)) * regularization
+
+
+def loss_pca_specandphot(
+    params,
+    data_batch,
+    data_aux,
+    n_components,
+    n_pix_spec,
+    opt_basis,
+    opt_priors,
+    regularization,
+):
+    if opt_basis and opt_priors:
+        pcacomponents = params[0]
+        pcacomponents_init = data_aux[1]
+    if opt_basis and not opt_priors:
+        pcacomponents = params[0]
+        pcacomponents_init = data_aux[2]
+    if not opt_basis and opt_priors:
+        pcacomponents = data_aux[0]
+        pcacomponents_init = data_aux[2]
+    # pcacomponents -= pcacomponents.mean(axis=1)[:, None]
+    (logfml, _, _, _, _, _) = bayesianpca_specandphot(
+        params,
+        data_batch,
+        data_aux,
+        n_components,
+        n_pix_spec,
+        opt_basis,
+        opt_priors,
+    )
+    diff = pcacomponents - pcacomponents_init
+    return -np.sum(logfml)  # + np.sum(diff ** 2) * regularization
+
+
+def loss_arch_speconly(
+    params,
+    data_batch,
+    data_aux,
+    n_components,
+    n_pix_spec,
+    opt_basis,
+    opt_priors,
+    regularization,
+):
+
+    (logfml, _, _, _, _, _) = bayesianpca_arch_speconly(
+        params,
+        data_batch,
+        data_aux,
+        n_components,
+        n_pix_spec,
+        opt_basis,
+        opt_priors,
+    )
+    return -np.sum(logfml)  # + np.sum(np.abs(diff)) * regularization
+
+
+def loss_arch_specandphot(
+    params,
+    data_batch,
+    data_aux,
+    n_components,
+    n_pix_spec,
+    opt_basis,
+    opt_priors,
+    regularization,
+):
+    (logfml, _, _, _, _, _) = bayesianpca_arch_specandphot(
+        params,
+        data_batch,
+        data_aux,
+        n_components,
+        n_pix_spec,
+        opt_basis,
+        opt_priors,
+    )
+    return -np.sum(logfml)  # + np.sum(diff ** 2) * regularization
+
+
+# CAN I REMOVE THOSE FOUR FUNCTIONS SINCE THEY JUST CALL THE SAME
