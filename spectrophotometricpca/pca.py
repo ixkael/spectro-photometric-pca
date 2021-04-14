@@ -36,6 +36,22 @@ def batch_indices_2(start_indices, n_components, npix):
     return indices_0, indices_1
 
 
+def batch_indices_3(start_indices, n_archetypes, n_components, npix):
+    nobj, n_pix_spec = start_indices.shape
+
+    indices_0 = np.arange(n_archetypes)[None, :, None, None] * np.ones(
+        (nobj, n_archetypes, n_components, npix), dtype=int
+    )
+    indices_1 = np.arange(n_components)[None, None, :, None] * np.ones(
+        (nobj, n_archetypes, n_components, npix), dtype=int
+    )
+    indices_2 = start_indices[:, None, None, :] * np.ones(
+        (1, n_archetypes, n_components, npix), dtype=int
+    )
+
+    return indices_0, indices_1, indices_2
+
+
 class PCAModel:
     def __init__(self, polynomials_spec, prefix, suffix):
         self.prefix = prefix
@@ -74,14 +90,23 @@ class PCAModel:
         )
 
     def init_params(
-        self, key, n_components, n_poly, n_pix_sed, opt_basis=True, opt_priors=True
+        self,
+        key,
+        n_archetypes,
+        n_components,
+        n_poly,
+        n_pix_sed,
+        opt_basis=True,
+        opt_priors=True,
     ):
 
-        self.pcacomponents_prior = PriorModel(n_components)
+        self.pcacomponents_prior = PriorModel(n_archetypes, n_components)
 
         self.opt_basis, self.opt_priors = opt_basis, opt_priors
 
-        self.pcacomponents = jax.random.normal(key, (n_components, n_pix_sed))
+        self.pcacomponents = jax.random.normal(
+            key, (n_archetypes, n_components, n_pix_sed)
+        )
         self.components_prior_params = self.pcacomponents_prior.random(key)
         self.polynomials_prior_mean = 0 * jax.random.normal(key, (n_poly,)) + 0
         self.polynomials_prior_loginvvar = 0 * jax.random.normal(
@@ -144,31 +169,38 @@ def chebychevPolynomials(n_poly, n_pix_spec):
 class PriorModel:
     """"""
 
-    def __init__(self, n_components):
+    def __init__(self, n_archetypes, n_components):
+        self.n_archetypes = n_archetypes
         self.n_components = n_components
 
     def random(self, key):
-        params_means = 0 * jax.random.normal(key, (self.n_components, 2))
-        params_loginvvar = 0 * jax.random.normal(key, (self.n_components, 2))
-        params = np.hstack([params_means, params_loginvvar])
+        params_means = 0 * jax.random.normal(
+            key, (self.n_archetypes, self.n_components, 2)
+        )
+        params_loginvvar = 0 * jax.random.normal(
+            key, (self.n_archetypes, self.n_components, 2)
+        )
+        params = np.concatenate([params_means, params_loginvvar], axis=-1)
         return params
 
     @staticmethod
     def get_mean_at_z(params, redshifts):
-        cst = np.ones((redshifts.size, 1)) * params[None, :, 0]
-        slp = redshifts[:, None] * (params[None, :, 1] - params[None, :, 0])
+        cst = np.ones((redshifts.size, 1, 1)) * params[None, :, :, 0]
+        slp = redshifts[:, None, None] * (params[None, :, :, 1] - params[None, :, :, 0])
         return cst + slp
         return (
-            params[None, :, 0]
-            * (redshifts[:, None] - params[None, :, 1])
-            * (redshifts[:, None] - params[None, :, 2])
+            params[None, :, :, 0]
+            * (redshifts[:, None, None] - params[None, :, :, 1])
+            * (redshifts[:, None, None] - params[None, :, :, 2])
         )
 
     @staticmethod
     def get_loginvvar_at_z(params, redshifts):
         expparams = np.exp(params)
-        cst = np.ones((redshifts.size, 1)) * expparams[None, :, 2]
-        slp = redshifts[:, None] * (expparams[None, :, 3] - expparams[None, :, 2])
+        cst = np.ones((redshifts.size, 1, 1)) * expparams[None, :, :, 2]
+        slp = redshifts[:, None, None] * (
+            expparams[None, :, :, 3] - expparams[None, :, :, 2]
+        )
         stddev = cst + slp
         # stddev = (
         #    params[None, :, 3]
@@ -266,15 +298,15 @@ def bayesianpca_speconly_explicit(
         theta_cov,
     ) = logmarglike_lineargaussianmodel_twotransfers_jitvmapvmap(
         components_spec_all,
-        spec[:, None, :],
-        spec_invvar[:, None, :],
-        spec_loginvvar[:, None, :],
+        spec[:, None, :] * np.ones((1, n_archetypes, 1)),
+        spec_invvar[:, None, :] * np.ones((1, n_archetypes, 1)),
+        spec_loginvvar[:, None, :] * np.ones((1, n_archetypes, 1)),
         mu,
         muinvvar,
         logmuinvvar,
     )
 
-    thetastd = np.diagonal(theta_cov, axis1=1, axis2=-1) ** 0.5
+    thetastd = np.diagonal(theta_cov, axis1=2, axis2=3) ** 0.5
 
     # Produce best fit models
     specmod_map = np.sum(components_spec_all * thetamap[:, :, :, None], axis=-2)
@@ -351,18 +383,18 @@ def bayesianpca_specandphot_explicit(
         ellfactors,
         components_spec_all,
         components_phot_all,
-        spec[:, None, :],
-        spec_invvar[:, None, :],
-        spec_loginvvar[:, None, :],
-        phot[:, None, :],
-        phot_invvar[:, None, :],
-        phot_loginvvar[:, None, :],
+        spec[:, None, :] * np.ones((1, n_archetypes, 1)),
+        spec_invvar[:, None, :] * np.ones((1, n_archetypes, 1)),
+        spec_loginvvar[:, None, :] * np.ones((1, n_archetypes, 1)),
+        phot[:, None, :] * np.ones((1, n_archetypes, 1)),
+        phot_invvar[:, None, :] * np.ones((1, n_archetypes, 1)),
+        phot_loginvvar[:, None, :] * np.ones((1, n_archetypes, 1)),
         mu,
         muinvvar,
         logmuinvvar,
     )
 
-    thetastd = np.diagonal(theta_cov, axis1=1, axis2=2) ** 0.5
+    thetastd = np.diagonal(theta_cov, axis1=2, axis2=3) ** 0.5
 
     # Produce best fit models
     specmod_map = np.sum(components_spec_all * thetamap[:, :, :, None], axis=-2)
@@ -381,6 +413,7 @@ def bayesianpca_speconly(
     params,
     data_batch,
     data_aux,
+    n_archetypes,
     n_components,
     n_pix_spec,
     opt_basis,
@@ -424,28 +457,24 @@ def bayesianpca_speconly(
         batch_interpweights,
     ) = data_batch
 
-    # ones = np.ones((bs, 1))
-    # batch_index_wave = np.zeros((bs,), int)
-    indices_0, indices_1 = batch_indices_2(
-        batch_interprightindices, n_components, n_pix_spec
+    indices_0, indices_1, indices_2 = batch_indices_3(
+        batch_interprightindices, n_archetypes, n_components, n_pix_spec
     )
-    # indices_0, indices_1 = batch_indices(batch_index_wave, n_components, n_pix_spec)
 
-    # pcacomponents_speconly is (n_components, n_pix_sed)
+    # pcacomponents_speconly is (n_archetypes, n_components, n_pix_sed)
     # batch_index_wave is (nobj, )
     # batch_interprightindices is (nobj, n_pix_spec)
-    # pcacomponents_speconly_atz is (nobj, n_components, n_pix_spec)
-    # pcacomponents_speconly_atz = pcacomponents_speconly[indices_0, indices_1]
+    # pcacomponents_speconly_atz is (nobj, n_archetypes, n_components, n_pix_spec)
     pcacomponents_speconly_atz = (
-        batch_interpweights[:, None, :]
-        * pcacomponents_speconly[indices_0, indices_1 - 1]
-        + (1 - batch_interpweights[:, None, :])
-        * pcacomponents_speconly[indices_0, indices_1]
+        batch_interpweights[:, None, None, :]
+        * pcacomponents_speconly[indices_0, indices_1, indices_2 - 1]
+        + (1 - batch_interpweights[:, None, None, :])
+        * pcacomponents_speconly[indices_0, indices_1, indices_2]
     )
     components_phot_speconly = np.sum(
-        pcacomponents_speconly[None, :, :, None]
-        * batch_transferfunctions[:, None, :, :],
-        axis=2,
+        pcacomponents_speconly[None, :, :, :, None]
+        * batch_transferfunctions[:, None, None, :, :],
+        axis=3,
     )
     components_prior_mean_speconly = PriorModel.get_mean_at_z(
         components_prior_params_speconly, batch_redshifts
@@ -460,22 +489,26 @@ def bayesianpca_speconly(
         thetastd_speconly,
         specmod_map_speconly,
     ) = bayesianpca_speconly_explicit(
-        pcacomponents_speconly_atz[:, None, :, :],  # [n_obj, 1, n_components, nspec]
+        pcacomponents_speconly_atz,  # [n_obj, n_archetypes, n_components, nspec]
         polynomials_spec,  # [n_poly, nspec]
         spec,  # [n_obj, nspec]
         spec_invvar,  # [n_obj, nspec]
         spec_loginvvar,  # [n_obj, nspec]
-        components_prior_mean_speconly[:, None, :],  # [n_obj, 1, n_components]
-        components_prior_loginvvar_speconly[:, None, :],  # [n_obj, 1, n_components]
+        components_prior_mean_speconly,  # [n_obj, n_archetypes, n_components]
+        components_prior_loginvvar_speconly,  # [n_obj, n_archetypes, n_components]
         polynomials_prior_mean_speconly,
         polynomials_prior_loginvvar_speconly,
     )
     photmod_map_speconly = np.sum(
-        components_phot_speconly[:, :, :] * thetamap_speconly[:, 0:n_components, None],
+        components_phot_speconly[:, :, :, :]
+        * thetamap_speconly[:, :, 0:n_components, None],
         axis=-2,
     )  # [n_obj, n_phot]
-    _, ellfactors, _ = logmarglike_lineargaussianmodel_onetransfer_jitvmap(
-        photmod_map_speconly[:, None, :], phot, phot_invvar, phot_loginvvar
+    _, ellfactors, _ = logmarglike_lineargaussianmodel_onetransfer_jitvmapvmap(
+        photmod_map_speconly[:, :, None, :],
+        phot[:, None, :] * np.ones((1, n_archetypes, 1)),
+        phot_invvar[:, None, :] * np.ones((1, n_archetypes, 1)),
+        phot_loginvvar[:, None, :] * np.ones((1, n_archetypes, 1)),
     )
     return (
         logfml_speconly,
@@ -483,7 +516,7 @@ def bayesianpca_speconly(
         thetastd_speconly,
         specmod_map_speconly,
         photmod_map_speconly,
-        np.ravel(ellfactors),
+        np.squeeze(ellfactors),
     )
 
 
@@ -491,6 +524,7 @@ def bayesianpca_specandphot(
     params,
     data_batch,
     data_aux,
+    n_archetypes,
     n_components,
     n_pix_spec,
     opt_basis,
@@ -534,19 +568,24 @@ def bayesianpca_specandphot(
         batch_interpweights,
     ) = data_batch
 
-    indices_0, indices_1 = batch_indices_2(
-        batch_interprightindices, n_components, n_pix_spec
+    indices_0, indices_1, indices_2 = batch_indices_3(
+        batch_interprightindices, n_archetypes, n_components, n_pix_spec
     )
+
+    # pcacomponents_speconly is (n_archetypes, n_components, n_pix_sed)
+    # batch_index_wave is (nobj, )
+    # batch_interprightindices is (nobj, n_pix_spec)
+    # pcacomponents_speconly_atz is (nobj, n_archetypes, n_components, n_pix_spec)
     pcacomponents_specandphot_atz = (
-        batch_interpweights[:, None, :]
-        * pcacomponents_specandphot[indices_0, indices_1 - 1]
-        + (1 - batch_interpweights[:, None, :])
-        * pcacomponents_specandphot[indices_0, indices_1]
+        batch_interpweights[:, None, None, :]
+        * pcacomponents_specandphot[indices_0, indices_1, indices_2 - 1]
+        + (1 - batch_interpweights[:, None, None, :])
+        * pcacomponents_specandphot[indices_0, indices_1, indices_2]
     )
     components_phot_specandphot = np.sum(
-        pcacomponents_specandphot[None, :, :, None]
-        * batch_transferfunctions[:, None, :, :],
-        axis=2,
+        pcacomponents_specandphot[None, :, :, :, None]
+        * batch_transferfunctions[:, None, None, :, :],
+        axis=3,
     )
     components_prior_mean_specandphot = PriorModel.get_mean_at_z(
         components_prior_params_specandphot, batch_redshifts
@@ -564,24 +603,26 @@ def bayesianpca_specandphot(
     # )
 
     (_, thetamap_speconly, _, _,) = bayesianpca_speconly_explicit(
-        pcacomponents_specandphot_atz[:, None, :, :],  # [n_obj, 1, n_components, nspec]
+        pcacomponents_specandphot_atz,  # [n_obj, n_archetypes, n_components, nspec]
         polynomials_spec,  # [n_poly, nspec]
         spec,  # [n_obj, nspec]
         spec_invvar,  # [n_obj, nspec]
         spec_loginvvar,  # [n_obj, nspec]
-        components_prior_mean_specandphot[:, None, :],  # [n_obj, 1, n_components]
-        components_prior_loginvvar_specandphot[:, None, :],  # [n_obj, 1, n_components]
+        components_prior_mean_specandphot,  # [n_obj, n_archetypes, n_components]
+        components_prior_loginvvar_specandphot,  # [n_obj, n_archetypes, n_components]
         polynomials_prior_mean_specandphot,
         polynomials_prior_loginvvar_specandphot,
     )
-    # ellfactors = np.ones_like(batch_redshifts)
     photmod_map_speconly = np.sum(
-        components_phot_specandphot[:, :, :]
-        * thetamap_speconly[:, 0:n_components, None],
-        axis=-2,
+        components_phot_specandphot[:, :, :, :]
+        * thetamap_speconly[:, :, 0:n_components, None],
+        axis=2,
     )
-    _, ellfactors, _ = logmarglike_lineargaussianmodel_onetransfer_jitvmap(
-        photmod_map_speconly[:, None, :], phot, phot_invvar, phot_loginvvar
+    _, ellfactors, _ = logmarglike_lineargaussianmodel_onetransfer_jitvmapvmap(
+        photmod_map_speconly[:, :, None, :],
+        phot[:, None, :] * np.ones((1, n_archetypes, 1)),
+        phot_invvar[:, None, :] * np.ones((1, n_archetypes, 1)),
+        phot_loginvvar[:, None, :] * np.ones((1, n_archetypes, 1)),
     )
 
     (
@@ -591,18 +632,18 @@ def bayesianpca_specandphot(
         specmod_map_specandphot,
         photmod_map_specandphot,
     ) = bayesianpca_specandphot_explicit(
-        pcacomponents_specandphot_atz[:, None, :, :],  # [n_obj, 1, n_components, nspec]
-        components_phot_specandphot[:, None, :, :],  # [n_obj, 1, n_components, nphot]
+        pcacomponents_specandphot_atz,  # [n_obj, n_archetypes, n_components, nspec]
+        components_phot_specandphot,  # [n_obj, n_archetypes, n_components, nphot]
         polynomials_spec,  # [n_poly, nspec]
-        ellfactors[:, None],  # [n_obj, 1]
+        ellfactors,  # [n_obj, n_archetypes]
         spec,  # [n_obj, nspec]
         spec_invvar,  # [n_obj, nspec]
         spec_loginvvar,  # [n_obj, nspec]
         phot,  # [n_obj, nphot]
         phot_invvar,  # [n_obj, nphot]
         phot_loginvvar,  # [n_obj, nphot]
-        components_prior_mean_specandphot[:, None, :],  # [n_obj, 1, n_components]
-        components_prior_loginvvar_specandphot[:, None, :],  # [n_obj, 1, n_components]
+        components_prior_mean_specandphot,  # [n_obj, n_archetypes, n_components]
+        components_prior_loginvvar_specandphot,  # [n_obj, n_archetypes, n_components]
         polynomials_prior_mean_specandphot,
         polynomials_prior_loginvvar_specandphot,
     )
@@ -612,7 +653,7 @@ def bayesianpca_specandphot(
         thetastd_specandphot,
         specmod_map_specandphot,
         photmod_map_specandphot,
-        np.ravel(ellfactors),
+        np.squeeze(ellfactors),
     )
 
 

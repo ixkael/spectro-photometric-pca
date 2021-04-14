@@ -192,18 +192,19 @@ def test_chebychevPolynomials():
 
 def test_prior():
 
+    n_archetypes = 2
     n_components = 3
     n_obj = 10
-    prior = PriorModel(n_components)
+    prior = PriorModel(n_archetypes, n_components)
 
     params = prior.random(key)
     # assert_shape(params, prior.params_shape)
 
     redshifts = 10 ** jax.random.normal(key, (n_obj,))
     mu = prior.get_mean_at_z(params, redshifts)
-    assert_shape(mu, (n_obj, n_components))
+    assert_shape(mu, (n_obj, n_archetypes, n_components))
     muloginvvar = prior.get_loginvvar_at_z(params, redshifts)
-    assert_shape(muloginvvar, (n_obj, n_components))
+    assert_shape(muloginvvar, (n_obj, n_archetypes, n_components))
 
 
 def test_bayesianpca_spec_and_specandphot():
@@ -215,7 +216,7 @@ def test_bayesianpca_spec_and_specandphot():
     dataPipeline = DataPipeline("data/fake/fake_")
 
     prefix, suffix = "data/fake/fake_", ""
-    n_components, n_poly = 4, 3
+    n_archetypes, n_components, n_poly = 2, 4, 3
     polynomials_spec = chebychevPolynomials(n_poly, n_pix_spec)
     pcamodel = PCAModel(polynomials_spec, prefix, suffix)
 
@@ -233,17 +234,22 @@ def test_bayesianpca_spec_and_specandphot():
                 print("speconly", speconly)
 
                 if speconly:
-                    bayesianpca = jit(bayesianpca_speconly, static_argnums=(3, 4, 5, 6))
+                    bayesianpca = jit(
+                        bayesianpca_speconly, static_argnums=(3, 4, 5, 6, 7)
+                    )
                 else:
                     bayesianpca = jit(
-                        bayesianpca_specandphot, static_argnums=(3, 4, 5, 6)
+                        bayesianpca_specandphot, static_argnums=(3, 4, 5, 6, 7)
                     )
 
-                @partial(jit, static_argnums=(3, 4, 5, 6, 7))
+                from jax.scipy.special import logsumexp
+
+                @partial(jit, static_argnums=(3, 4, 5, 6, 7, 8))
                 def loss_fn(
                     params,
                     data_batch,
                     data_aux,
+                    n_archetypes,
                     n_components,
                     n_pix_spec,
                     opt_basis,
@@ -264,16 +270,20 @@ def test_bayesianpca_spec_and_specandphot():
                         params,
                         data_batch,
                         data_aux,
+                        n_archetypes,
                         n_components,
                         n_pix_spec,
                         opt_basis,
                         opt_priors,
                     )
                     diff = pcacomponents - pcacomponents_init
-                    return -np.sum(logfml)  # + np.sum(diff ** 2) * regularization
+                    return -np.sum(
+                        logsumexp(logfml, axis=1)
+                    )  # + np.sum(diff ** 2) * regularization
 
                 pcacomponents_prior = pcamodel.init_params(
                     key,
+                    n_archetypes,
                     n_components,
                     n_poly,
                     n_pix_sed,
@@ -306,6 +316,7 @@ def test_bayesianpca_spec_and_specandphot():
                     params,
                     data_batch,
                     data_aux,
+                    n_archetypes,
                     n_components,
                     n_pix_spec,
                     opt_basis,
@@ -316,6 +327,7 @@ def test_bayesianpca_spec_and_specandphot():
                     params,
                     data_batch,
                     data_aux,
+                    n_archetypes,
                     n_components,
                     n_pix_spec,
                     opt_basis,
@@ -332,23 +344,24 @@ def test_bayesianpca_spec_and_specandphot():
                     photmod_map,
                     ellfactors,
                 ) = result
-                assert_shape(thetamap, (batchsize, n_components + n_poly))
-                assert_shape(thetastd, (batchsize, n_components + n_poly))
-                assert_shape(specmod_map, (batchsize, n_pix_spec))
-                assert_shape(photmod_map, (batchsize, n_pix_phot))
-                assert_shape(ellfactors, (batchsize,))
+                assert_shape(thetamap, (batchsize, n_archetypes, n_components + n_poly))
+                assert_shape(thetastd, (batchsize, n_archetypes, n_components + n_poly))
+                assert_shape(specmod_map, (batchsize, n_archetypes, n_pix_spec))
+                assert_shape(photmod_map, (batchsize, n_archetypes, n_pix_phot))
+                assert_shape(ellfactors, (batchsize, n_archetypes))
 
                 opt_init, opt_update, get_params_opt = jax.experimental.optimizers.adam(
                     1e-3
                 )
                 opt_state = opt_init(params)
 
-                @partial(jit, static_argnums=(4, 5, 6, 7, 8))
+                @partial(jit, static_argnums=(4, 5, 6, 7, 8, 9))
                 def update(
                     step,
                     opt_state,
                     data_batch,
                     data_aux,
+                    n_archetypes,
                     n_components,
                     n_pix_spec,
                     opt_basis,
@@ -360,6 +373,7 @@ def test_bayesianpca_spec_and_specandphot():
                         params,
                         data_batch,
                         data_aux,
+                        n_archetypes,
                         n_components,
                         n_pix_spec,
                         opt_basis,
@@ -385,6 +399,7 @@ def test_bayesianpca_spec_and_specandphot():
                             opt_state,
                             data_batch,
                             data_aux,
+                            n_archetypes,
                             n_components,
                             n_pix_spec,
                             opt_basis,
