@@ -104,23 +104,23 @@ def test_results():
     dataPipeline = DataPipeline(input_dir=input_dir, subsampling=subsampling)
 
     prefix, suffix = "data/fake/fakeprefix_", "_fakesuffix"
-    n_components = 4
+    n_archetypes, n_components = 2, 4
     batchsize = 10
     indices = np.arange(n_obj // 4, n_obj // 2)
     n_obj_out = indices.size
 
     resultsPipeline = ResultsPipeline(
-        prefix, suffix, n_components, dataPipeline, indices
+        prefix, suffix, n_archetypes, n_components, dataPipeline, indices
     )
 
     n_batches = dataPipeline.get_nbatches(indices, batchsize)
 
-    logfml = jax.random.normal(key, (n_obj_out,))
-    thetamap = jax.random.normal(key, (n_obj_out, n_components))
-    thetastd = jax.random.normal(key, (n_obj_out, n_components))
+    logfml = jax.random.normal(key, (n_obj_out, n_archetypes))
+    thetamap = jax.random.normal(key, (n_obj_out, n_archetypes, n_components))
+    thetastd = jax.random.normal(key, (n_obj_out, n_archetypes, n_components))
     specmod = jax.random.normal(key, (n_obj_out, n_pix_spec))
     photmod = jax.random.normal(key, (n_obj_out, n_pix_phot))
-    ellfactors = jax.random.normal(key, (n_obj_out,))
+    ellfactors = jax.random.normal(key, (n_obj_out, n_archetypes))
 
     for _ in range(n_batches):
         data_batch = dataPipeline.next_batch_specandphot(indices, batchsize)
@@ -156,7 +156,7 @@ def test_results():
     np.allclose(ellfactors, resultsPipeline.ellfactors)
 
     resultsPipeline2 = ResultsPipeline(
-        prefix, suffix, n_components, dataPipeline, indices
+        prefix, suffix, n_archetypes, n_components, dataPipeline, indices
     )
     resultsPipeline2.load_reconstructions()
 
@@ -171,8 +171,12 @@ def test_results():
 
 def test_filennames():
     opt_basis, opt_priors = 0, 1
-    n_components, n_poly, batchsize, subsampling, learningrate = 3, 3, 13, 1, 1e-3
+    initialization = "test"
+    n_archetypes, n_components, n_poly = 2, 3, 3
+    batchsize, subsampling, learningrate = 13, 1, 1e-3
     prefix = pca_file_prefix(
+        initialization,
+        n_archetypes,
         n_components,
         n_poly,
         batchsize,
@@ -182,6 +186,8 @@ def test_filennames():
         learningrate,
     )
     (
+        initialization2,
+        n_archetypes2,
         n_components2,
         n_poly2,
         batchsize2,
@@ -190,6 +196,7 @@ def test_filennames():
         opt_priors2,
         learningrate2,
     ) = extract_pca_parameters(prefix)
+    assert n_archetypes == n_archetypes2
     assert n_components == n_components2
     assert n_poly == n_poly2
     assert learningrate == learningrate2

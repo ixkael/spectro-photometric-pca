@@ -6,6 +6,7 @@ import os
 import scipy.interpolate
 import astropy.io.fits as pyfits
 from redrock.templates import Template
+from redrock.archetypes import Archetype
 
 from chex import assert_shape
 
@@ -93,7 +94,9 @@ class DataPipeline:
         assert_shape(self.redshifts, (n_obj,))
 
         if phot:
-            self.transferfunctions = onp.load(self.input_dir + "transferfunctions.npy")
+            self.transferfunctions = (
+                onp.load(self.input_dir + "transferfunctions.npy") * 1e-16
+            )
             self.transferfunctions_zgrid = onp.load(
                 self.input_dir + "transferfunctions_zgrid.npy"
             )
@@ -133,11 +136,17 @@ class DataPipeline:
             )
             self.interpweights = onp.load(self.input_dir + "interpweights" + suffix)
 
-            self.spec = onp.load(self.input_dir + "spec_mod" + suffix)
             self.specmod_sdss = onp.load(self.input_dir + "spec_mod" + suffix)
-            self.spec_invvar = onp.load(self.input_dir + "spec_invvar" + suffix) * 0 + 1
+            if True:
+                self.spec = onp.load(self.input_dir + "spec" + suffix)
+                self.spec_invvar = onp.load(self.input_dir + "spec_invvar" + suffix)
+            else:
+                self.spec = onp.load(self.input_dir + "spec_mod" + suffix)
+                self.spec_invvar = (
+                    onp.load(self.input_dir + "spec_invvar" + suffix) * 0 + 1
+                )
 
-            self.n_pix_specels = self.spec.shape[1]
+            self.n_pix_spec = self.spec.shape[1]
 
             assert_shape(self.chi2s_sdss, (n_obj,))
             assert_shape(self.index_wave, (n_obj,))
@@ -296,6 +305,7 @@ class DataPipeline:
             print("Initial spec shape:", self.spec.shape)
             # spec[spec <= 0] = np.nan
             self.spec_invvar[~onp.isfinite(self.spec)] = 0
+            self.spec_invvar[self.spec == 0] = 0
             self.spec_invvar[~onp.isfinite(self.spec_invvar)] = 0
             self.spec_invvar[self.spec_invvar < 0] = 0
             self.spec_invvar[self.interpweights < 0] = 0
@@ -314,10 +324,21 @@ class DataPipeline:
 
             # Floor spectroscopic errors
             ind = self.spec_invvar ** -0.5 < 1e-4 * np.abs(self.spec)
-            ind = np.where(ind)[0]
+            # ind &= self.spec_invvar != 0
+            # ind &= self.spec != 0
             print("How many spec errors are floored?", np.sum(ind), "out of", ind.size)
+            ind = np.where(ind)[0]
             self.spec_invvar[ind] = (1e-4 * np.abs(self.spec)[ind]) ** -2.0
-
+            if (
+                np.sum(~np.isfinite(self.spec)) > 0
+                or np.sum(~np.isfinite(self.spec_invvar)) > 0
+            ):
+                print(
+                    "nans?",
+                    np.sum(~np.isfinite(self.spec)),
+                    np.sum(~np.isfinite(self.spec_invvar)),
+                )
+                stop
             # Calculated after changing the data
             self.chi2s_sdss = np.sum(
                 (self.specmod_sdss - self.spec) ** 2 * self.spec_invvar, axis=-1
@@ -336,11 +357,15 @@ class DataPipeline:
             self.specphotscalings = np.ones((self.spec.shape[0],))
 
         if phot:
+            ind = ~np.isfinite(self.phot_invvar)
+            ind |= self.phot_invvar < 0
+            ind = np.where(ind)[0]
+            self.phot_invvar[ind] = 0
             print("Initial phot shape:", self.phot.shape)
             # Floor photometric errors
             ind = self.phot_invvar ** -0.5 < 1e-2 * self.phot
             print("How many phot errors are floored?", np.sum(ind), "out of", ind.size)
-            ind = np.where(ind)[0]
+            # ind = np.where(ind)[0]
             self.phot_invvar[ind] = (1e-2 * self.phot[ind]) ** -2.0
 
         print("Finished pre-processing data.")
@@ -374,7 +399,7 @@ class DataPipeline:
         )
         batch_spec = np.take(self.spec, batch_indices, axis=0)
         batch_spec_invvar = np.take(self.spec_invvar, batch_indices, axis=0)
-        batch_sed_mask = create_mask(batch_spec, batch_spec_invvar, batch_index_wave)
+        # batch_sed_mask = create_mask(batch_spec, batch_spec_invvar, batch_index_wave)
         batch_phot = np.take(self.phot, batch_indices, axis=0)
         batch_phot_invvar = np.take(self.phot_invvar, batch_indices, axis=0)
         batch_redshifts = np.take(self.redshifts, batch_indices)
@@ -417,7 +442,18 @@ class DataPipeline:
         batch_phot_loginvvar = np.where(
             batch_phot_invvar == 0, 0, np.log(batch_phot_invvar)
         )
-
+        if (
+            np.sum(~np.isfinite(batch_spec)) > 0
+            or np.sum(~np.isfinite(batch_spec_invvar)) > 0
+            or np.sum(~np.isfinite(batch_spec_loginvvar)) > 0
+        ):
+            print(
+                "nans?",
+                np.sum(~np.isfinite(batch_spec)),
+                np.sum(~np.isfinite(batch_spec_invvar)),
+                np.sum(~np.isfinite(batch_spec_loginvvar)),
+            )
+            exit(1)
         return (
             startindex,
             actualbatchsize,
@@ -539,7 +575,9 @@ class DataPipeline:
 
 
 class ResultsPipeline:
-    def __init__(self, prefix, suffix, n_components, dataPipeline, indices=None):
+    def __init__(
+        self, prefix, suffix, n_archetypes, n_components, dataPipeline, indices=None
+    ):
         n_pix_sed = dataPipeline.lamgrid.size
         n_pix_spec = dataPipeline.spec.shape[1]
         n_pix_phot = dataPipeline.phot.shape[1]
@@ -551,24 +589,24 @@ class ResultsPipeline:
         if indices is not None:
             n_obj = indices.size
             self.indices = indices
-            self.logfml = onp.zeros((n_obj,))
+            self.logfml = onp.zeros((n_obj, n_archetypes))
             self.specmod = onp.zeros((n_obj, n_pix_spec))
             self.photmod = onp.zeros((n_obj, n_pix_phot))
-            self.thetamap = onp.zeros((n_obj, n_components))
-            self.thetastd = onp.zeros((n_obj, n_components))
-            self.ellfactors = onp.zeros((n_obj,))
+            self.thetamap = onp.zeros((n_obj, n_archetypes, n_components))
+            self.thetastd = onp.zeros((n_obj, n_archetypes, n_components))
+            self.ellfactors = onp.zeros((n_obj, n_archetypes))
 
     def write_batch(
         self, data_batch, logfml, thetamap, thetastd, specmod, photmod, ellfactors
     ):
 
         si, bs = data_batch[0], data_batch[1]
-        self.logfml[si : si + bs] = logfml
+        self.logfml[si : si + bs, :] = logfml
         self.specmod[si : si + bs, :] = specmod
         self.photmod[si : si + bs, :] = photmod
-        self.thetamap[si : si + bs, :] = thetamap
-        self.thetastd[si : si + bs, :] = thetastd
-        self.ellfactors[si : si + bs] = ellfactors
+        self.thetamap[si : si + bs, :, :] = thetamap
+        self.thetastd[si : si + bs, :, :] = thetastd
+        self.ellfactors[si : si + bs, :] = ellfactors
 
     def load_reconstructions(self):
 
@@ -594,14 +632,23 @@ class ResultsPipeline:
 def extract_pca_parameters(runroot):
 
     last = runroot.split("/")[-1]
+    initialization = last.split("_")[0]
     vals = onp.array(last.split("_")[1::2])
     print(vals)
-    n_components, n_poly, batchsize, subsampling, opt_basis, opt_priors = vals[
-        [0, 1, 2, 3, 4, 5]
-    ].astype(int)
+    (
+        n_archetypes,
+        n_components,
+        n_poly,
+        batchsize,
+        subsampling,
+        opt_basis,
+        opt_priors,
+    ) = vals[[0, 1, 2, 3, 4, 5, 6]].astype(int)
     learningrate = vals[-1].astype(float)
 
     return (
+        initialization,
+        n_archetypes,
         n_components,
         n_poly,
         batchsize,
@@ -613,10 +660,19 @@ def extract_pca_parameters(runroot):
 
 
 def pca_file_prefix(
-    n_components, n_poly, batchsize, subsampling, opt_basis, opt_priors, learningrate
+    initialization,
+    n_archetypes,
+    n_components,
+    n_poly,
+    batchsize,
+    subsampling,
+    opt_basis,
+    opt_priors,
+    learningrate,
 ):
 
-    prefix = "pca_"
+    prefix = initialization + "_"
+    prefix += str(n_archetypes) + "_archetypes_"
     prefix += str(n_components) + "_components_"
     prefix += str(n_poly) + "_poly_"
     prefix += str(batchsize) + "_batchsize_"
@@ -628,11 +684,12 @@ def pca_file_prefix(
     return prefix
 
 
-def load_fits_templates(
+def load_redrock_templates(
     xnew,
     num_components,
     directory="data/",
     bounds_error=False,
+    renorm=False,
     files=["rrtemplate-galaxy.fits", "rrtemplate-qso.fits"],
 ):
     os.environ["RR_TEMPLATE_DIR"] = directory
@@ -641,8 +698,17 @@ def load_fits_templates(
     off = 0
     print("Target bounds:", np.min(xnew), np.max(xnew))
     for file in files:
-        temp = Template(filename=file)
-        print("Loaded file:", file)
+        try:
+            temp = Template(filename=file)
+            print("Loaded PCA templates from file:", file)
+        except:
+            try:
+                temp = Archetype(filename=directory + file)
+                print("Loaded archetypes from file:", file)
+            except:
+                print("Files", files)
+                print("do not describe valid redrock templates or archetypes.")
+                stop(1)
         print("Number of available templates:", temp.flux.shape[0])
         print("Bounds:", np.min(temp.wave), np.max(temp.wave))
         for i in range(temp.flux.shape[0]):
@@ -658,7 +724,11 @@ def load_fits_templates(
             )(xnew)
             off += 1
 
-    y_interp -= y_interp.mean(axis=1)[:, None]
+    y_interp = y_interp[:off, :]
+
+    if renorm:
+        # y_interp -= y_interp.mean(axis=1)[:, None]
+        y_interp /= np.sum(y_interp ** 2, axis=1)[:, None]
 
     return y_interp
 
