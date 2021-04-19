@@ -5,6 +5,7 @@ import numpy as onp
 import jax
 from jax import partial, jit
 import jax.numpy as np
+from jax.scipy.special import logsumexp
 
 from gasp.pca_utils_jx import *
 from gasp.marginallikelihoods_jx import *
