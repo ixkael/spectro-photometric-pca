@@ -6,6 +6,7 @@ import jax.experimental.optimizers
 import pytest
 import jax
 import jax.numpy as np
+from jax.scipy.special import logsumexp
 
 from chex import assert_shape
 
@@ -241,8 +242,6 @@ def test_bayesianpca_spec_and_specandphot():
                     bayesianpca = jit(
                         bayesianpca_specandphot, static_argnums=(3, 4, 5, 6, 7)
                     )
-
-                from jax.scipy.special import logsumexp
 
                 @partial(jit, static_argnums=(3, 4, 5, 6, 7, 8))
                 def loss_fn(
