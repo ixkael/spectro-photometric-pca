@@ -199,7 +199,7 @@ def test_filennames():
     assert opt_priors == opt_priors2
 
 
-def test_load_fits_templates():
+def test_load_redrock_templates():
 
     log_lam1 = np.arange(3.55, 4.02, 0.0001)
     log_lam2 = np.arange(2.85, 3.55, 0.0001)
@@ -208,7 +208,7 @@ def test_load_fits_templates():
 
     num_components = 4
 
-    y_new = load_fits_templates(lam, num_components)
+    y_new = load_redrock_templates(lam, num_components)
 
     assert y_new.shape[0] == num_components
     assert y_new.shape[1] == lam.size
