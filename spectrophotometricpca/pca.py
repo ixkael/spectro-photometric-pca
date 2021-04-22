@@ -506,7 +506,7 @@ def bayesianpca_speconly(
         thetastd_speconly,
         specmod_map_speconly,
         photmod_map_speconly,
-        ellfactors,
+        ellfactors[:, :, 0],
     )
 
 
@@ -643,7 +643,7 @@ def bayesianpca_specandphot(
         thetastd_specandphot,
         specmod_map_specandphot,
         photmod_map_specandphot,
-        ellfactors,
+        ellfactors[:, :, 0],
     )
 
 
