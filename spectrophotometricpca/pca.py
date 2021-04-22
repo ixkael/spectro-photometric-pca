@@ -5,12 +5,12 @@ import numpy as onp
 import jax
 from jax import partial, jit
 import jax.numpy as np
-from jax.scipy.special import logsumexp
 
 from gasp.pca_utils_jx import *
 from gasp.marginallikelihoods_jx import *
 
 from jax.nn import sigmoid
+from jax.scipy.special import logsumexp
 
 
 def batch_indices(start_indices, n_components, npix):
@@ -313,12 +313,7 @@ def bayesianpca_speconly_explicit(
     specmod_map = np.sum(components_spec_all * thetamap[:, :, :, None], axis=-2)
     # chi2_spec = np.sum((specmod_map - spec) ** 2 * spec_invvar, axis=-1)
 
-    return (
-        np.squeeze(logfml),
-        np.squeeze(thetamap),
-        np.squeeze(thetastd),
-        np.squeeze(specmod_map),
-    )
+    return (logfml, thetamap, thetastd, specmod_map)
 
 
 @jit
@@ -401,13 +396,7 @@ def bayesianpca_specandphot_explicit(
     specmod_map = np.sum(components_spec_all * thetamap[:, :, :, None], axis=-2)
     photmod_map = np.sum(components_phot_all * thetamap[:, :, :, None], axis=-2)
 
-    return (
-        np.squeeze(logfml),
-        np.squeeze(thetamap),
-        np.squeeze(thetastd),
-        np.squeeze(specmod_map),
-        np.squeeze(photmod_map),
-    )
+    return (logfml, thetamap, thetastd, specmod_map, photmod_map)
 
 
 def bayesianpca_speconly(
@@ -517,7 +506,7 @@ def bayesianpca_speconly(
         thetastd_speconly,
         specmod_map_speconly,
         photmod_map_speconly,
-        np.squeeze(ellfactors),
+        ellfactors,
     )
 
 
@@ -654,7 +643,7 @@ def bayesianpca_specandphot(
         thetastd_specandphot,
         specmod_map_specandphot,
         photmod_map_specandphot,
-        np.squeeze(ellfactors),
+        ellfactors,
     )
 
 
