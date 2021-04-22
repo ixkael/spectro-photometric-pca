@@ -35,11 +35,16 @@ from jax.interpreters import xla
 
 # jax.core.check_leaks = True
 
+print("Devices in use:", jax.devices(), jax.device_count())
 cpus = jax.devices("cpu")
-gpus = jax.devices("gpu")
+try:
+    gpus = jax.devices("gpu")
+    best_device = "cpu"
+except:
+    best_device = "cpu"
+    gpus = "No gpus"
 print("CPUs and GPUs:", cpus, gpus)
 jax.config.update("jax_platform_name", "cpu")  # will allocate to GPU where relevant
-print("Devices in use:", jax.devices(), jax.device_count())
 
 import jax.numpy as np
 from jax import grad, jit, vmap, value_and_grad, random
@@ -55,15 +60,13 @@ from utils import *
 
 
 @click.command()
-@click.argument(
-    "input_dir", type=click.Path(exists=True), default="data/dr16eboss_mock"
-)
+@click.argument("input_dir", type=click.Path(exists=True), default="data/dr16eboss")
 # @click.option("--input_dir", required=True, type=str, help="Root directory of data set")
 @click.option(
     "--dataname",
     default=None,
     callback=lambda c, p, v: v if v else c.params["input_dir"].split("/")[-1],
-    help="Number of epochs",
+    help="Data name",
 )
 @click.option(
     "--results_dir",
@@ -74,25 +77,39 @@ from utils import *
 )
 @click.option(
     "--n_epochs",
-    default=101,
+    default=2,
     show_default=True,
     type=int,
     help="Number of epochs",
 )
 @click.option(
     "--batchsize",
-    default=3000,  # * 2 or 8,
+    default=500 * 6,  # * 2 or 8,
     show_default=True,
     type=int,
     help="Batch size for training",
 )
 @click.option(
-    "--n_components",
-    default=12,
+    "--initialization",
+    default="rrarchpca",
+    type=str,
     show_default=True,
-    type=int,
-    help="Number of PCA components",
+    help="Initial model",
 )
+# @click.option(
+#    "--n_archetypes",
+#    default=101,
+#    show_default=True,
+#    type=int,
+#    help="Number of archetypes",
+# )
+# @click.option(
+#    "--n_components",
+#    default=1,
+#    show_default=True,
+#    type=int,
+#    help="Number of PCA components",
+# )
 @click.option(
     "--subsampling",
     default=1,
@@ -102,14 +119,14 @@ from utils import *
 )
 @click.option(
     "--learningrate",
-    default=1e-4,  # greater than 1e-2 never works.
+    default=1e-3,  # greater than 1e-2 never works.
     show_default=True,
     type=float,
     help="Learning rate for optimisation",
 )
 @click.option(
     "--n_poly",
-    default=1,
+    default=0,
     show_default=True,
     type=int,
     help="Number of chebychev polynomials for spectroscopic systematics",
@@ -123,7 +140,7 @@ from utils import *
 )
 @click.option(
     "--opt_basis",
-    default=True,
+    default=False,
     show_default=True,
     type=bool,
     help="Optimize basis functions",
@@ -151,7 +168,7 @@ def main(
     results_dir,
     n_epochs,
     batchsize,
-    n_components,
+    initialization,
     subsampling,
     learningrate,
     n_poly,
@@ -165,26 +182,6 @@ def main(
     early_stopping = False
     use_subset = False
     write_subset = False
-
-    output_dir = results_dir + "/" + dataname + "/"
-    the_prefix = pca_file_prefix(
-        n_components,
-        n_poly,
-        batchsize,
-        subsampling,
-        opt_basis,
-        opt_priors,
-        learningrate,
-    )
-    print(the_prefix)
-    output_dir += the_prefix
-    output_dir += "/"
-    output_prefix = output_dir + ""
-
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-
-    print("prefix : \n", output_prefix)
 
     datapipe = DataPipeline(
         input_dir=input_dir + "/",
@@ -203,8 +200,6 @@ def main(
     print("Size of validation before cuts:", indices_valid.size)
     indices_valid = indices_valid[np.in1d(indices_valid, datapipe.indices)]
     print("Size of validation after cuts:", indices_valid.size)
-    onp.save(output_dir + "/indices_train", indices_train)
-    onp.save(output_dir + "/indices_valid", indices_valid)
 
     numObj_train, numObj_valid = indices_train.size, indices_valid.size
     numBatches_train = datapipe.get_nbatches(indices_train, batchsize)
@@ -229,16 +224,82 @@ def main(
     # Initial valuesn_components, n_poly, n_pix_sed
     polynomials_spec = chebychevPolynomials(n_poly, n_pix_spec)
 
+    if initialization == "rrpca":
+        files = ["rrtemplate-galaxy.fits", "rrtemplate-qso.fits"]
+        n_components = 12
+        n_archetypes = 1
+        pcacomponents_init = load_redrock_templates(lamgrid, 200, files=files)
+        n_components = pcacomponents_init.shape[0]
+    elif initialization == "datapca":
+        n_archetypes = 1
+        pcacomponents_init = np.load(input_dir + "pca_init.npy")
+        print("Loaded", input_dir + "pca_init.npy")
+        assert lamgrid.size == pcacomponents_init.shape[1]
+        n_components = pcacomponents_init.shape[0]
+    elif initialization == "rrarch":
+        files = ["rrarchetype-galaxy.fits"]
+        n_components = 1
+        pcacomponents_init = load_redrock_templates(lamgrid, 200, files=files)
+        n_archetypes = pcacomponents_init.shape[0]
+    elif initialization == "rrarchpca":
+        n_archetypes = 1
+        temp_wave = np.load("data/rrarchetype-galaxy-pca.npy")
+        temp_components_ = np.load("data/rrarchetype-galaxy-wave.npy")
+        n_components = temp_components_.shape[0]
+        pcacomponents_init = onp.zeros((n_components, lamgrid.size))
+        for i in range(n_components):
+            pcacomponents_init[i, :] = scipy.interpolate.interp1d(
+                temp_wave,
+                temp_components_[i, :],
+                kind="linear",
+                bounds_error=False,
+                fill_value="extrapolate",
+                assume_sorted=True,
+            )(lamgrid)
+    else:
+        print("Invalid initialization name:", initialization)
+        stop(1)
+    print("n_components = ", n_components)
+    print("n_archetypes = ", n_archetypes)
+
+    output_dir = results_dir + "/" + dataname + "/"
+    the_prefix = pca_file_prefix(
+        initialization,
+        n_archetypes,
+        n_components,
+        n_poly,
+        batchsize,
+        subsampling,
+        opt_basis,
+        opt_priors,
+        learningrate,
+    )
+    print(the_prefix)
+    output_dir += the_prefix
+    output_dir += "/"
+    output_prefix = output_dir + ""
+
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
+    print("prefix : \n", output_prefix)
+
+    onp.save(output_dir + "/indices_train", indices_train)
+    onp.save(output_dir + "/indices_valid", indices_valid)
+
     pcamodel = PCAModel(polynomials_spec, output_prefix, "")
     pcacomponents_prior = pcamodel.init_params(
-        key, n_components, n_poly, n_pix_sed, opt_basis, opt_priors
+        key, n_archetypes, n_components, n_poly, n_pix_sed, opt_basis, opt_priors
     )
 
-    # Load PCA templates
-    pcacomponents_init = load_fits_templates(lamgrid, n_components)
+    pcacomponents_init = pcacomponents_init.reshape(
+        (n_archetypes, n_components, n_pix_sed)
+    )
     pcamodel.pcacomponents = 1 * pcacomponents_init
 
-    print("n_components, n_pix_spec", n_components, n_pix_spec)
+    print(
+        "n_archetypes, n_components, n_pix_spec", n_archetypes, n_components, n_pix_spec
+    )
 
     # Initialise optimiser, as well as update operation.
     opt_init, opt_update, get_params_opt = jax.experimental.optimizers.adam(
@@ -249,19 +310,20 @@ def main(
     if speconly:
         suffix_orig = "_speconly"
         bayesianpca = jit(
-            bayesianpca_speconly, backend="gpu", static_argnums=(3, 4, 5, 6)
+            bayesianpca_speconly, backend=best_device, static_argnums=(3, 4, 5, 6, 7)
         )
     else:
         suffix_orig = "_specandphot"
         bayesianpca = jit(
-            bayesianpca_specandphot, backend="gpu", static_argnums=(3, 4, 5, 6)
+            bayesianpca_specandphot, backend=best_device, static_argnums=(3, 4, 5, 6, 7)
         )
 
-    @partial(jit, backend="gpu", static_argnums=(3, 4, 5, 6, 7))
+    @partial(jit, backend=best_device, static_argnums=(3, 4, 5, 6, 7, 8))
     def loss_fn(
         params,
         data_batch,
         data_aux,
+        n_archetypes,
         n_components,
         n_pix_spec,
         opt_basis,
@@ -272,12 +334,13 @@ def main(
             params,
             data_batch,
             data_aux,
+            n_archetypes,
             n_components,
             n_pix_spec,
             opt_basis,
             opt_priors,
         )
-        return -np.sum(logfml)
+        return -np.sum(logsumexp(logfml, axis=1))
 
     if opt_basis and opt_priors:
         data_aux = (polynomials_spec, pcacomponents_init)
@@ -288,12 +351,13 @@ def main(
         components = pcamodel.get_params_nonopt()[0]
         data_aux = (components, polynomials_spec, pcacomponents_init)
 
-    @partial(jit, backend="gpu", static_argnums=(4, 5, 6, 7, 8))
+    @partial(jit, backend=best_device, static_argnums=(4, 5, 6, 7, 8, 9))
     def update(
         step,
         opt_state,
         data_batch,
         data_aux,
+        n_archetypes,
         n_components,
         n_pix_spec,
         opt_basis,
@@ -305,6 +369,7 @@ def main(
             params,
             data_batch,
             data_aux,
+            n_archetypes,
             n_components,
             n_pix_spec,
             opt_basis,
@@ -343,6 +408,7 @@ def main(
             resultspipe = ResultsPipeline(
                 output_prefix,
                 suffix,
+                n_archetypes,
                 n_components + n_poly,
                 datapipe,
                 indices_valid,
@@ -357,12 +423,15 @@ def main(
                     pcamodel.get_params_opt(),
                     data_batch,
                     data_aux,
+                    n_archetypes,
                     n_components,
                     n_pix_spec,
                     opt_basis,
                     opt_priors,
                 )
-                losses_valid[i, j] = -np.sum(result[0].block_until_ready())
+                losses_valid[i, j] = -np.sum(
+                    logsumexp(result[0].block_until_ready(), axis=1)
+                )
 
                 resultspipe.write_batch(data_batch, *result)
                 del result
@@ -399,16 +468,16 @@ def main(
                     onp.zeros((numObj_valid, transferfunctions_zgrid[::zstep].size))
                     + onp.nan
                 )
-                valid_thetamap_z = (
-                    onp.zeros(
-                        (
-                            numObj_valid,
-                            transferfunctions_zgrid[::zstep].size,
-                            n_components + n_poly,
-                        )
-                    )
-                    + onp.nan
-                )
+                # valid_thetamap_z = (
+                #    onp.zeros(
+                #        (
+                #            numObj_valid,
+                #            transferfunctions_zgrid[::zstep].size,
+                #            n_components + n_poly,
+                #        )
+                #    )
+                #    + onp.nan
+                # )
                 datapipe.batch = 0  # reset batch number
 
                 onp.save(
@@ -436,25 +505,30 @@ def main(
                             pcamodel.get_params_opt(),
                             datapipe.change_redshift(iz, zstep, data_batch),
                             data_aux,
+                            n_archetypes,
                             n_components,
                             n_pix_spec,
                             opt_basis,
                             opt_priors,
                         )
-                        valid_logpz[si : si + bs, iz] = result[0].block_until_ready()
-                        valid_thetamap_z[si : si + bs, iz, :] = result[
-                            1
-                        ].block_until_ready()
+                        logfml = result[0].block_until_ready()
+                        best = np.argmax(logfml, axis=1)
+                        valid_logpz[si : si + bs, iz] = logfml[
+                            np.arange(bs, dtype=int), best
+                        ]
+                        # valid_thetamap_z[si : si + bs, iz, :, :] = result[
+                        #    1
+                        # ].block_until_ready()
                         xla._xla_callable.cache_clear()
 
                     onp.save(
                         output_dir + "/logpz" + suffix,
                         valid_logpz[: si + bs, :],
                     )
-                    onp.save(
-                        output_dir + "/thetamap_z" + suffix,
-                        valid_thetamap_z[: si + bs, :, :],
-                    )
+                    # onp.save(
+                    #    output_dir + "/thetamap_z" + suffix,
+                    #    valid_thetamap_z[: si + bs, :, :],
+                    # )
 
                     print_remaining_time(batch_start_time, 0, j, numBatches_valid)
 
@@ -479,6 +553,7 @@ def main(
                 opt_state,
                 data_batch,
                 data_aux,
+                n_archetypes,
                 n_components,
                 n_pix_spec,
                 opt_basis,
@@ -496,12 +571,14 @@ def main(
             # updated_batch_ells[updated_batch_ells < 0] = 1.0
             # train_specphotscaling[neworder[si : si + bs]] = updated_batch_ells
 
-        params = get_params_opt(opt_state)
-        pcacomponents = params[0]
-        constraints = np.sum(pcacomponents ** 2, axis=1) / np.sum(
-            pcacomponents_init ** 2, axis=1
-        )
+        # if need to apply constraints
+        # params = get_params_opt(opt_state)
+        # pcacomponents = params[0]
+        # constraints = np.sum(pcacomponents ** 2, axis=1) / np.sum(
+        #    pcacomponents_init ** 2, axis=1
+        # )
         # print("Constraints", constraints)
+
         loss = onp.mean(losses_train[i, :])
         pcamodel.set_params(get_params_opt(opt_state))  # get updated parameter array
         xla._xla_callable.cache_clear()
