@@ -225,14 +225,13 @@ def main(
     polynomials_spec = chebychevPolynomials(n_poly, n_pix_spec)
 
     if initialization == "rrpca":
-        files = ["rrtemplate-galaxy.fits", "rrtemplate-qso.fits"]
-        n_components = 12
+        files = ["rrtemplate-galaxy.fits"]
         n_archetypes = 1
-        pcacomponents_init = load_redrock_templates(lamgrid, 200, files=files)
+        pcacomponents_init = load_redrock_templates(lamgrid, 16, files=files)
         n_components = pcacomponents_init.shape[0]
     elif initialization == "datapca":
         n_archetypes = 1
-        pcacomponents_init = np.load(input_dir + "pca_init.npy")
+        pcacomponents_init = np.load(input_dir + "pca_init.npy")[:, ::subsampling]
         print("Loaded", input_dir + "pca_init.npy")
         assert lamgrid.size == pcacomponents_init.shape[1]
         n_components = pcacomponents_init.shape[0]
