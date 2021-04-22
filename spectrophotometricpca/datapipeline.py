@@ -327,7 +327,7 @@ class DataPipeline:
             # ind &= self.spec_invvar != 0
             # ind &= self.spec != 0
             print("How many spec errors are floored?", np.sum(ind), "out of", ind.size)
-            ind = np.where(ind)[0]
+            # ind = np.where(ind)[0]
             self.spec_invvar[ind] = (1e-4 * np.abs(self.spec)[ind]) ** -2.0
             if (
                 np.sum(~np.isfinite(self.spec)) > 0
@@ -359,7 +359,7 @@ class DataPipeline:
         if phot:
             ind = ~np.isfinite(self.phot_invvar)
             ind |= self.phot_invvar < 0
-            ind = np.where(ind)[0]
+            # ind = np.where(ind)[0]
             self.phot_invvar[ind] = 0
             print("Initial phot shape:", self.phot.shape)
             # Floor photometric errors
@@ -601,9 +601,22 @@ class ResultsPipeline:
     ):
 
         si, bs = data_batch[0], data_batch[1]
+
+        best = np.argmax(logfml, axis=1)
+
+        fac = np.ones((bs, specmod.shape[2]), dtype=int)
+        i0 = np.arange(bs, dtype=int)[:, None] * fac
+        i1 = best[:, None] * fac
+        i2 = fac * np.arange(specmod.shape[2], dtype=int)[None, :]
+        self.specmod[si : si + bs, :] = specmod[i0, i1, i2]
+
+        fac = np.ones((bs, photmod.shape[2]), dtype=int)
+        i0 = np.arange(bs, dtype=int)[:, None] * fac
+        i1 = best[:, None] * fac
+        i2 = fac * np.arange(photmod.shape[2], dtype=int)[None, :]
+        self.photmod[si : si + bs, :] = photmod[i0, i1, i2]
+
         self.logfml[si : si + bs, :] = logfml
-        self.specmod[si : si + bs, :] = specmod
-        self.photmod[si : si + bs, :] = photmod
         self.thetamap[si : si + bs, :, :] = thetamap
         self.thetastd[si : si + bs, :, :] = thetastd
         self.ellfactors[si : si + bs, :] = ellfactors
