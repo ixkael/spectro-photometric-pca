@@ -77,7 +77,7 @@ from utils import *
 )
 @click.option(
     "--n_epochs",
-    default=2,
+    default=1000,
     show_default=True,
     type=int,
     help="Number of epochs",
@@ -91,25 +91,11 @@ from utils import *
 )
 @click.option(
     "--initialization",
-    default="rrarchpca",
+    default="datapca",  # datapca rrpca rrarch rrarchpca
     type=str,
     show_default=True,
     help="Initial model",
 )
-# @click.option(
-#    "--n_archetypes",
-#    default=101,
-#    show_default=True,
-#    type=int,
-#    help="Number of archetypes",
-# )
-# @click.option(
-#    "--n_components",
-#    default=1,
-#    show_default=True,
-#    type=int,
-#    help="Number of PCA components",
-# )
 @click.option(
     "--subsampling",
     default=1,
@@ -126,7 +112,7 @@ from utils import *
 )
 @click.option(
     "--n_poly",
-    default=0,
+    default=2,
     show_default=True,
     type=int,
     help="Number of chebychev polynomials for spectroscopic systematics",
@@ -224,40 +210,9 @@ def main(
     # Initial valuesn_components, n_poly, n_pix_sed
     polynomials_spec = chebychevPolynomials(n_poly, n_pix_spec)
 
-    if initialization == "rrpca":
-        files = ["rrtemplate-galaxy.fits"]
-        n_archetypes = 1
-        pcacomponents_init = load_redrock_templates(lamgrid, 16, files=files)
-        n_components = pcacomponents_init.shape[0]
-    elif initialization == "datapca":
-        n_archetypes = 1
-        pcacomponents_init = np.load(input_dir + "pca_init.npy")[:, ::subsampling]
-        print("Loaded", input_dir + "pca_init.npy")
-        assert lamgrid.size == pcacomponents_init.shape[1]
-        n_components = pcacomponents_init.shape[0]
-    elif initialization == "rrarch":
-        files = ["rrarchetype-galaxy.fits"]
-        n_components = 1
-        pcacomponents_init = load_redrock_templates(lamgrid, 200, files=files)
-        n_archetypes = pcacomponents_init.shape[0]
-    elif initialization == "rrarchpca":
-        n_archetypes = 1
-        temp_wave = np.load("data/rrarchetype-galaxy-pca.npy")
-        temp_components_ = np.load("data/rrarchetype-galaxy-wave.npy")
-        n_components = temp_components_.shape[0]
-        pcacomponents_init = onp.zeros((n_components, lamgrid.size))
-        for i in range(n_components):
-            pcacomponents_init[i, :] = scipy.interpolate.interp1d(
-                temp_wave,
-                temp_components_[i, :],
-                kind="linear",
-                bounds_error=False,
-                fill_value="extrapolate",
-                assume_sorted=True,
-            )(lamgrid)
-    else:
-        print("Invalid initialization name:", initialization)
-        stop(1)
+    pcacomponents_init = load_templates(initialization, lamgrid, input_dir, subsampling)
+    n_archetypes, n_components, _ = pcacomponents_init.shape
+
     print("n_components = ", n_components)
     print("n_archetypes = ", n_archetypes)
 
@@ -291,9 +246,6 @@ def main(
         key, n_archetypes, n_components, n_poly, n_pix_sed, opt_basis, opt_priors
     )
 
-    pcacomponents_init = pcacomponents_init.reshape(
-        (n_archetypes, n_components, n_pix_sed)
-    )
     pcamodel.pcacomponents = 1 * pcacomponents_init
 
     print(
@@ -349,6 +301,10 @@ def main(
     if not opt_basis and opt_priors:
         components = pcamodel.get_params_nonopt()[0]
         data_aux = (components, polynomials_spec, pcacomponents_init)
+    if not opt_basis and not opt_priors:
+        components = pcamodel.get_params_nonopt()[0]
+        priors = pcamodel.get_params_nonopt()[1]
+        data_aux = (components, priors, polynomials_spec, pcacomponents_init)
 
     @partial(jit, backend=best_device, static_argnums=(4, 5, 6, 7, 8, 9))
     def update(
@@ -412,7 +368,6 @@ def main(
                 datapipe,
                 indices_valid,
             )
-
             datapipe.batch = 0  # reset batch number
             valid_start_time = time.time()
             for j in range(numBatches_valid):
@@ -539,6 +494,9 @@ def main(
             onp.save(output_dir + "/valid_losses" + suffix, losses_valid[: i + 1, :])
             print("> Back to training")
             xla._xla_callable.cache_clear()
+
+        if not opt_priors and not opt_basis:
+            continue
 
         neworder = jax.random.permutation(key, np.arange(numObj_train))
         indices_train_reordered = np.take(indices_train, neworder)

@@ -767,3 +767,44 @@ def create_interp_transfer(interprightindices, interpweights, n_pix_sed):
     transfer[idx1, idx2, idx3 - 1] = interpweights
     transfer[idx1, idx2, idx3] = 1 - interpweights
     return transfer
+
+
+def load_templates(initialization, lamgrid, input_dir, subsampling):
+    if initialization == "rrpca":
+        files = ["rrtemplate-galaxy.fits"]
+        n_archetypes = 1
+        pcacomponents_init = load_redrock_templates(lamgrid, 16, files=files)
+        n_components = pcacomponents_init.shape[0]
+    elif initialization == "datapca":
+        n_archetypes = 1
+        pcacomponents_init = np.load(input_dir + "/pca_init.npy")[:, ::subsampling]
+        # print("Loaded", input_dir + "/pca_init.npy")
+        assert lamgrid.size == pcacomponents_init.shape[1]
+        n_components = pcacomponents_init.shape[0]
+    elif initialization == "rrarch":
+        files = ["rrarchetype-galaxy.fits"]
+        n_components = 1
+        pcacomponents_init = load_redrock_templates(lamgrid, 200, files=files)
+        n_archetypes = pcacomponents_init.shape[0]
+    elif initialization == "rrarchpca":
+        n_archetypes = 1
+        temp_wave = np.load("data/rrarchetype-galaxy-pca.npy")
+        temp_components_ = np.load("data/rrarchetype-galaxy-wave.npy")
+        n_components = temp_components_.shape[0]
+        pcacomponents_init = onp.zeros((n_components, lamgrid.size))
+        for i in range(n_components):
+            pcacomponents_init[i, :] = scipy.interpolate.interp1d(
+                temp_wave,
+                temp_components_[i, :],
+                kind="linear",
+                bounds_error=False,
+                fill_value="extrapolate",
+                assume_sorted=True,
+            )(lamgrid)
+    else:
+        print("Invalid initialization name:", initialization)
+        stop(1)
+    pcacomponents_init = pcacomponents_init.reshape(
+        (n_archetypes, n_components, lamgrid.size)
+    )
+    return pcacomponents_init

@@ -142,10 +142,13 @@ class PCAModel:
             ]
         if not self.opt_basis and not self.opt_priors:
             arr = [self.pcacomponents] + [
-                self.components_prior_params,
-                self.polynomials_prior_mean,
-                self.polynomials_prior_loginvvar,
+                [
+                    self.components_prior_params,
+                    self.polynomials_prior_mean,
+                    self.polynomials_prior_loginvvar,
+                ]
             ]
+
         return arr
 
     def set_params(self, params):
@@ -420,6 +423,12 @@ def bayesianpca_speconly(
     if not opt_basis and opt_priors:
         pcacomponents_speconly, polynomials_spec = data_aux[0], data_aux[1]
         priors_speconly = params
+    if not opt_basis and not opt_priors:
+        pcacomponents_speconly, priors_speconly, polynomials_spec = (
+            data_aux[0],
+            data_aux[1],
+            data_aux[2],
+        )
 
     (
         components_prior_params_speconly,
@@ -531,6 +540,12 @@ def bayesianpca_specandphot(
     if not opt_basis and opt_priors:
         pcacomponents_specandphot, polynomials_spec = data_aux[0], data_aux[1]
         priors_specandphot = params
+    if not opt_basis and not opt_priors:
+        pcacomponents_specandphot, priors_specandphot, polynomials_spec = (
+            data_aux[0],
+            data_aux[1],
+            data_aux[2],
+        )
 
     (
         components_prior_params_specandphot,
