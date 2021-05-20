@@ -91,7 +91,7 @@ from utils import *
 )
 @click.option(
     "--initialization",
-    default="datapca",  # datapca rrpca rrarch rrarchpca
+    default="rrarchpca",  # datapca rrpca rrarch rrarchpca
     type=str,
     show_default=True,
     help="Initial model",
@@ -410,23 +410,23 @@ def main(
             if compute_redshifts_pdfs:
                 print("> Running redshift grids")
                 zstep = 1
+                actualnz = transferfunctions_zgrid[::zstep].size
                 print(
                     "> should take approximately %dh %dm %ds"
                     % process_time(
                         valid_start_time,
                         valid_end_time,
-                        transferfunctions_zgrid[::zstep].size,
+                        actualnz,
                     )
                 )
-                valid_logpz = (
-                    onp.zeros((numObj_valid, transferfunctions_zgrid[::zstep].size))
-                    + onp.nan
-                )
+                valid_logpz = onp.zeros((numObj_valid, actualnz)) + onp.nan
+                if n_archetypes > 1:
+                    valid_logpz2 = onp.zeros_like(valid_logpz) + onp.nan
                 # valid_thetamap_z = (
                 #    onp.zeros(
                 #        (
                 #            numObj_valid,
-                #            transferfunctions_zgrid[::zstep].size,
+                #            actualnz,
                 #            n_components + n_poly,
                 #        )
                 #    )
@@ -466,10 +466,14 @@ def main(
                             opt_priors,
                         )
                         logfml = result[0].block_until_ready()
+                        # only best template
                         best = np.argmax(logfml, axis=1)
                         valid_logpz[si : si + bs, iz] = logfml[
                             np.arange(bs, dtype=int), best
                         ]
+                        if n_archetypes > 1:  # marginalize
+                            valid_logpz2[si : si + bs, iz] = logsumexp(logfml, axis=1)
+
                         # valid_thetamap_z[si : si + bs, iz, :, :] = result[
                         #    1
                         # ].block_until_ready()
@@ -478,6 +482,10 @@ def main(
                     onp.save(
                         output_dir + "/logpz" + suffix,
                         valid_logpz[: si + bs, :],
+                    )
+                    onp.save(
+                        output_dir + "/logpz2" + suffix,
+                        valid_logpz2[: si + bs, :],
                     )
                     # onp.save(
                     #    output_dir + "/thetamap_z" + suffix,
